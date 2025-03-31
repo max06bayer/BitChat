@@ -14,6 +14,7 @@ class Node:
         if self.publicIP in bootstrapNodes: bootstrapNodes.remove(self.publicIP)
         self.localIP = self.get_local_ip()
         self.port = port
+        self.pendingResponse = None
 
         # initialize the Storage
         self.DHT = [[] for bucket in range(160)]
@@ -34,7 +35,12 @@ class Node:
         for node in self.bootstrapIPs:
             self.sendData(node, {'nodeInfoRequest': (self.publicIP, self.CID)})
             
-        # TODO: Implement whole Bootstrap process
+        # Lookup the closest node for each Bucket Range
+        for index, bucket in enumerate(bucketTargets):
+            closestNodes = self.deepNodeSearch(bucket, 5)
+            for node in closestNodes:
+                if self.getBucketIndex(next(iter(dict(node)))) == index: 
+                    self.addNode(node[next(iter(dict(node)))], next(iter(dict(node))))
 
     def getClosestCIDs(self, cid, amount=16) -> list:
         all_nodes = []
@@ -55,13 +61,13 @@ class Node:
         return self.pendingResponse
 
 
-    """def findNode(self, cid):
+    def deepNodeSearch(self, cid, amount):
         # Keep track of k closest nodes we've seen
         closest_nodes = []
-        asked_nodes = set()
+        asked_nodes = []
         
         # Start with closest nodes from our buckets
-        closest_nodes = self.getClosestCIDs(cid, k=20)
+        closest_nodes = self.getClosestCIDs(cid, amount=20)
         closest_distance = float('inf')
         
         while True:
@@ -78,25 +84,22 @@ class Node:
                 break
                 
             # Ask this node for its closest nodes
-            asked_nodes.add(next_to_ask)
-            new_nodes = next_to_ask.get_closest_nodes(cid)
+            asked_nodes.append(next_to_ask)
+            new_nodes = self.askForClosestNodes(cid, next_to_ask[next(iter(dict(next_to_ask)))])
+            self.pendingResponse = None
             
             # Update our list of closest nodes
             all_nodes = closest_nodes + new_nodes
-            # Sort by XOR distance to target
-            all_nodes.sort(key=lambda n: n.id ^ cid)
-            # Keep only k closest
-            closest_nodes = all_nodes[:20]
+            all_nodes.sort(key=lambda node: int(next(iter(dict(node))), base=16) ^ int(cid, base=16))
+            closest_nodes = all_nodes[:amount]
             
             # Update closest distance we've seen
-            new_closest = closest_nodes[0].id ^ cid
+            new_closest = int(next(iter(dict(closest_nodes[0]))), base=16) ^ int(cid, base=16)
             if new_closest >= closest_distance:
-                # If we haven't found anything closer, we're done
                 break
             closest_distance = new_closest
 
-        # Return the closest node we found
-        return closest_nodes[0]"""
+        return closest_nodes[:amount]
 
 
     def get_local_ip(self):
@@ -160,7 +163,5 @@ class Node:
     
 myNode = Node(port=60000, bootstrapNodes=['79.230.223.138']);
 while True: 
-    time.sleep(5)
+    time.sleep(6)
     print(myNode.DHT, end="\n")
-    print("Closest Nodes from 138.199.160.80:")
-    print(myNode.askForClosestNodes('007a233d120500776a947363fff5246d9e5daa6a', '138.199.160.80'))
