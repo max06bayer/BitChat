@@ -26,21 +26,26 @@ class Node:
         Thread(target=self.bootstrap).start()
 
     def bootstrap(self):
-        bucketTargets = []
-        for i in range(160):
-            targetCID = self.generateTargetCID(i)
-            bucketTargets.append(targetCID)
-        
-        # Fill up the DHT with the bootstrap nodes
-        for node in self.bootstrapIPs:
-            self.sendData(node, {'nodeInfoRequest': (self.publicIP, self.CID)})
+        while True:
+            time.sleep(1)
+            bucketTargets = []
+            for i in range(160):
+                targetCID = self.generateTargetCID(i)
+                bucketTargets.append(targetCID)
             
-        # Lookup the closest node for each Bucket Range
-        for index, bucket in enumerate(bucketTargets):
-            closestNodes = self.deepNodeSearch(bucket, 5)
-            for node in closestNodes:
-                if self.getBucketIndex(next(iter(dict(node)))) == index: 
-                    self.addNode(node[next(iter(dict(node)))], next(iter(dict(node))))
+            # Fill up the DHT with the bootstrap nodes
+            for node in self.bootstrapIPs:
+                self.sendData(node, {'nodeInfoRequest': (self.publicIP, self.CID)})
+                
+            # Lookup the closest node for each Bucket Range
+            for index, bucket in enumerate(bucketTargets):
+                closestNodes = self.deepNodeSearch(bucket, 5)
+                for node in closestNodes:
+                    print(f"Looking to fill bucket {index}", end="\r")
+                    if self.getBucketIndex(next(iter(dict(node)))) == index: 
+                        print(f"\nFound Node {node} in bucket {index}")
+                        self.addNode(node[next(iter(dict(node)))], next(iter(dict(node))))
+
 
     def getClosestCIDs(self, cid, amount=16) -> list:
         all_nodes = []
@@ -159,9 +164,18 @@ class Node:
         distance = random.randint(lowerBound, upperBound)
         targetInt = myCidInt ^ distance
         return format(targetInt, '040x')
+    
+    def showDHT(self):
+        # Print the DHT
+        # os.system('clear')
+        for i, bucket in enumerate(self.DHT):
+            if len(bucket) == 0: continue
+            print(f"Bucket {i}: ", end="")
+            for node in bucket:
+                print(f"{node} ", end="")
+            print()
 
     
 myNode = Node(port=60000, bootstrapNodes=['79.230.223.138']);
 while True: 
-    time.sleep(6)
-    print(myNode.DHT, end="\n")
+    time.sleep(5); # myNode.showDHT()
