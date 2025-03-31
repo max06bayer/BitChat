@@ -25,16 +25,14 @@ class Node:
         Thread(target=self.bootstrap).start()
 
     def bootstrap(self):
-        # Fill up the DHT with the bootstrap nodes
-        for node in self.bootstrapIPs:
-            self.sendData(node, {'nodeInfoRequest': (self.publicIP, self.CID)})
-
         bucketTargets = []
         for i in range(160):
             targetCID = self.generateTargetCID(i)
             bucketTargets.append(targetCID)
-
-        # print(bucketTargets)
+        
+        # Fill up the DHT with the bootstrap nodes
+        for node in self.bootstrapIPs:
+            self.sendData(node, {'nodeInfoRequest': (self.publicIP, self.CID)})
             
         # TODO: Implement whole Bootstrap process
 
@@ -42,11 +40,20 @@ class Node:
         all_nodes = []
         for bucket in self.DHT:
             for node in bucket:
-                all_nodes.extend(node)
+                all_nodes.append(node)
 
-        all_nodes.sort(key=lambda node: int(node.keys[0], base=16) ^ int(cid, base=16))
+        all_nodes.sort(key=lambda node: int(next(iter(dict(node))), base=16) ^ int(cid, base=16))
         return all_nodes[:amount]
     
+    def askForClosestNodes(self, cid, targetNodeIP):
+        # Ask the target node for its closest nodes to cid
+        data = {'closestNodesRequest': (self.publicIP, cid)}
+        self.sendData(targetNodeIP, data)
+        while self.pendingResponse == None:
+            time.sleep(1)
+
+        return self.pendingResponse
+
 
     """def findNode(self, cid):
         # Keep track of k closest nodes we've seen
@@ -54,15 +61,14 @@ class Node:
         asked_nodes = set()
         
         # Start with closest nodes from our buckets
-        closest_nodes = self.get_closest_from_buckets(cid, k=20)
+        closest_nodes = self.getClosestCIDs(cid, k=20)
         closest_distance = float('inf')
         
         while True:
-            # Find closest unasked node
             next_to_ask = None
             for node in closest_nodes:
-                if node.id not in asked_nodes:
-                    distance = node.id ^ cid
+                if node not in asked_nodes:
+                    distance = int(int(next(iter(dict(node))), base=16) ^ int(cid, base=16)).bit_length() - 1
                     if distance < closest_distance:
                         next_to_ask = node
                         closest_distance = distance
@@ -72,7 +78,7 @@ class Node:
                 break
                 
             # Ask this node for its closest nodes
-            asked_nodes.add(next_to_ask.id)
+            asked_nodes.add(next_to_ask)
             new_nodes = next_to_ask.get_closest_nodes(cid)
             
             # Update our list of closest nodes
@@ -90,8 +96,8 @@ class Node:
             closest_distance = new_closest
 
         # Return the closest node we found
-        return closest_nodes[0]
-"""
+        return closest_nodes[0]"""
+
 
     def get_local_ip(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -128,6 +134,14 @@ class Node:
             elif 'nodeInfoResponse' in data:
                 self.addNode(data['nodeInfoResponse'][0], data['nodeInfoResponse'][1])
 
+            elif 'closestNodesRequest' in data:
+                self.sendData(data['closestNodesRequest'][0], 
+                    {'closestNodesResponse': self.getClosestCIDs(data['closestNodesRequest'][1], 20)})
+                
+            elif 'closestNodesResponse' in data:
+                self.pendingResponse = data['closestNodesResponse']
+
+
     def sendData(self, ip:str, data:dict):
         client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         client.connect((ip, self.port))
@@ -148,3 +162,5 @@ myNode = Node(port=60000, bootstrapNodes=['79.230.223.138']);
 while True: 
     time.sleep(5)
     print(myNode.DHT, end="\n")
+    print("Closest Nodes from 138.199.160.80:")
+    print(myNode.askForClosestNodes('007a233d120500776a947363fff5246d9e5daa6a', '138.199.160.80'))
