@@ -4,6 +4,7 @@ import json
 import socket
 import binascii
 import os
+import random
 
 class file_system_node:
     def __init__(self, port:int, bootstrap_nodes:list):
@@ -59,6 +60,8 @@ class file_system_node:
     async def bootstrap(self, bootstrap_nodes):
         print(f"Bootstrapping started with CID: {self.CID}")
         bootstrap_nodes.remove(self.public_ip) if self.public_ip in bootstrap_nodes else None
+        bucket_targets = []
+        for i in range(16): bucket_targets.append(self.generate_target_cid(i))
         for node in bootstrap_nodes:
             new_node = await self.send_data(node, {'node_info_request': (self.public_ip, self.CID)})
             self.add_node(new_node[0], new_node[1])
@@ -74,6 +77,14 @@ class file_system_node:
     def add_node(self, ip: str, cid: str):
         dht_index = self.get_bucket_index(cid)
         self.DHT[dht_index].append((cid,ip))
+    
+    def generate_target_cid(self, bucketDistance: int) -> str:
+        myCidInt = int(self.CID, base=16)
+        lowerBound = 2 ** bucketDistance
+        upperBound = 2 ** (bucketDistance + 1) - 1
+        distance = random.randint(lowerBound, upperBound)
+        targetInt = myCidInt ^ distance
+        return format(targetInt, '04x')
 
 
 FSN = file_system_node(port=60000, bootstrap_nodes=['79.230.223.138'])
