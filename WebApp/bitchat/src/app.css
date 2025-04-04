@@ -1,0 +1,16 @@
+html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    width: 100%;
+    background-image: url('/background.png');
+    background-size: cover; /* scales image to cover the entire screen */
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed; /* optional: makes it "stick" like a wallpaper */
+}
+
+body {
+    margin: 0;
+    padding: 0;
+}

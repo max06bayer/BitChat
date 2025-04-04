@@ -79,7 +79,7 @@ class file_system_node:
                 for node in closest_nodes:
                     if self.get_bucket_index(node[0]) == index: 
                         self.add_node(node[1], node[0])
-            await asyncio.sleep(1)
+            await asyncio.sleep(1) # let other code execute
 
     async def deep_node_search(self, cid: str, amount=4) -> list:
         closest_nodes = []; asked_nodes = []
