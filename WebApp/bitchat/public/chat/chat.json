@@ -1,0 +1,242 @@
+[
+    {
+      "sender-name": "John Smith",
+      "sender-id": "johnsmith",
+      "sender-avatar": "https://randomuser.me/api/portraits/men/1.jpg",
+      "message": "Hello everyone! Excited to start this new project. 🚀 #NewBeginnings #TeamWork",
+      "message-id": "1",
+      "message-time": "2023-10-01T09:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 12, "comments": 3}
+    },
+    {
+      "sender-name": "Jane Doe",
+      "sender-id": "janedoe",
+      "sender-avatar": "https://randomuser.me/api/portraits/women/2.jpg",
+      "message": "Good morning! ☀️ Ready to tackle the challenges ahead. #MotivationMonday",
+      "message-id": "2",
+      "message-time": "2023-10-01T09:15:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 15, "comments": 4}
+    },
+    {
+      "sender-name": "Alice Johnson",
+      "sender-id": "alicejohnson",
+      "sender-avatar": "https://randomuser.me/api/portraits/women/3.jpg",
+      "message": "Just finished the report. Please review and provide feedback. 📄 #WorkUpdate",
+      "message-id": "3",
+      "message-time": "2023-10-01T09:30:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 9, "comments": 2}
+    },
+    {
+      "sender-name": "Bob Brown",
+      "sender-id": "bobbrown",
+      "sender-avatar": "https://randomuser.me/api/portraits/men/4.jpg",
+      "message": "Does anyone have the latest sales figures? 📊 #DataRequest",
+      "message-id": "4",
+      "message-time": "2023-10-01T09:45:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 7, "comments": 5}
+    },
+    {
+      "sender-name": "Charlie Davis",
+      "sender-id": "charliedavis",
+      "sender-avatar": "https://randomuser.me/api/portraits/men/5.jpg",
+      "message": "Great job on the presentation today! 👏 #WellDone #TeamEffort",
+      "message-id": "5",
+      "message-time": "2023-10-01T10:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 20, "comments": 6}
+    },
+    {
+      "sender-name": "David Evans",
+      "sender-id": "davidevans",
+      "sender-avatar": "https://randomuser.me/api/portraits/men/6.jpg",
+      "message": "Lunch break! Who's up for some sushi? 🍣 #LunchTime",
+      "message-id": "6",
+      "message-time": "2023-10-01T12:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 13, "comments": 8}
+    },
+    {
+      "sender-name": "Eve Foster",
+      "sender-id": "evefoster",
+      "sender-avatar": "https://randomuser.me/api/portraits/women/7.jpg",
+      "message": "Remember to submit your timesheets by EOD. ⏳ #Reminder",
+      "message-id": "7",
+      "message-time": "2023-10-01T13:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 11, "comments": 1}
+    },
+    {
+      "sender-name": "Frank Green",
+      "sender-id": "frankgreen",
+      "sender-avatar": "https://randomuser.me/api/portraits/men/8.jpg",
+      "message": "Looking forward to the weekend! Any plans? 🎉 #WeekendVibes",
+      "message-id": "8",
+      "message-time": "2023-10-01T15:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 18, "comments": 9}
+    },
+    {
+      "sender-name": "Grace Hall",
+      "sender-id": "gracehall",
+      "sender-avatar": "https://randomuser.me/api/portraits/women/9.jpg",
+      "message": "Just a friendly reminder about the team meeting tomorrow at 10 AM. 🕙 #TeamMeeting",
+      "message-id": "9",
+      "message-time": "2023-10-01T16:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 14, "comments": 2}
+    },
+    {
+      "sender-name": "Hank Irwin",
+      "sender-id": "hankirwin",
+      "sender-avatar": "https://randomuser.me/api/portraits/men/10.jpg",
+      "message": "Check out this article on industry trends. Quite insightful! 📰 #IndustryNews",
+      "message-id": "10",
+      "message-time": "2023-10-01T17:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 16, "comments": 3}
+    },
+    {
+      "sender-name": "Ivy Jones",
+      "sender-id": "ivyjones",
+      "sender-avatar": "https://randomuser.me/api/portraits/women/11.jpg",
+      "message": "Happy Friday! Don't forget to log off and relax. 🏖️ #WorkLifeBalance",
+      "message-id": "11",
+      "message-time": "2023-10-01T18:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 22, "comments": 5}
+    },
+    {
+      "sender-name": "Jack King",
+      "sender-id": "jackking",
+      "sender-avatar": "https://randomuser.me/api/portraits/men/12.jpg",
+      "message": "Need assistance with the new software update. Anyone available? 💻 #TechSupport",
+      "message-id": "12",
+      "message-time": "2023-10-01T19:00:00Z",
+      "message-attachments": [],
+      "message-reactions": {"likes": 10, "comments": 7}
+    },
+    {
+    "sender-name": "Leo Martin",
+    "sender-id": "leomartin",
+    "sender-avatar": "https://randomuser.me/api/portraits/men/14.jpg",
+    "message": "Excited to announce our new product launch! 🚀 #Innovation #LaunchDay",
+    "message-id": "14",
+    "message-time": "2023-10-01T20:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 25, "comments": 10}
+    },
+    {
+    "sender-name": "Mia Nelson",
+    "sender-id": "mianelson",
+    "sender-avatar": "https://randomuser.me/api/portraits/women/15.jpg",
+    "message": "Does anyone have recommendations for project management tools? 🛠️ #Productivity",
+    "message-id": "15",
+    "message-time": "2023-10-01T21:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 8, "comments": 4}
+    },
+    {
+    "sender-name": "Nathan Owens",
+    "sender-id": "nathanowens",
+    "sender-avatar": "https://randomuser.me/api/portraits/men/16.jpg",
+    "message": "Team outing was a blast! Thanks to everyone who joined. 🎉 #TeamBonding",
+    "message-id": "16",
+    "message-time": "2023-10-01T22:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 30, "comments": 12}
+    },
+    {
+    "sender-name": "Olivia Perez",
+    "sender-id": "oliviaperez",
+    "sender-avatar": "https://randomuser.me/api/portraits/women/17.jpg",
+    "message": "Reminder: Quarterly reports are due next Monday. 📈 #Finance",
+    "message-id": "17",
+    "message-time": "2023-10-01T23:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 6, "comments": 2}
+    },
+    {
+    "sender-name": "Paul Quinn",
+    "sender-id": "paulquinn",
+    "sender-avatar": "https://randomuser.me/api/portraits/men/18.jpg",
+    "message": "Check out this podcast on leadership. Really insightful! 🎧 #Leadership",
+    "message-id": "18",
+    "message-time": "2023-10-02T00:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 14, "comments": 5}
+    },
+    {
+    "sender-name": "Quinn Roberts",
+    "sender-id": "quinnroberts",
+    "sender-avatar": "https://randomuser.me/api/portraits/women/19.jpg",
+    "message": "Happy to help with the onboarding process. Welcome aboard! 🤝 #NewHire",
+    "message-id": "19",
+    "message-time": "2023-10-02T01:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 18, "comments": 7}
+    },
+    {
+    "sender-name": "Ryan Smith",
+    "sender-id": "ryansmith",
+    "sender-avatar": "https://randomuser.me/api/portraits/men/20.jpg",
+    "message": "Does anyone have experience with the new software update? 🖥️ #TechSupport",
+    "message-id": "20",
+    "message-time": "2023-10-02T02:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 5, "comments": 3}
+    },
+    {
+    "sender-name": "Sophia Taylor",
+    "sender-id": "sophiataylor",
+    "sender-avatar": "https://randomuser.me/api/portraits/women/21.jpg",
+    "message": "Great article on market trends. A must-read! 📚 #IndustryInsights",
+    "message-id": "21",
+    "message-time": "2023-10-02T03:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 22, "comments": 6}
+    },
+    {
+    "sender-name": "Thomas Underwood",
+    "sender-id": "thomasunderwood",
+    "sender-avatar": "https://randomuser.me/api/portraits/men/22.jpg",
+    "message": "Looking forward to the client meeting tomorrow. Let's nail it! 💼 #ClientMeeting",
+    "message-id": "22",
+    "message-time": "2023-10-02T04:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 17, "comments": 4}
+    },
+    {
+    "sender-name": "Uma Vaughn",
+    "sender-id": "umavaughn",
+    "sender-avatar": "https://randomuser.me/api/portraits/women/23.jpg",
+    "message": "Just completed the training module. Feeling accomplished! ✅ #ProfessionalDevelopment",
+    "message-id": "23",
+    "message-time": "2023-10-02T05:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 19, "comments": 5}
+    },
+    {
+    "sender-name": "Victor White",
+    "sender-id": "victorwhite",
+    "sender-avatar": "https://randomuser.me/api/portraits/men/24.jpg",
+    "message": "Anyone interested in a lunchtime yoga session? 🧘‍♂️ #Wellness",
+    "message-id": "24",
+    "message-time": "2023-10-02T06:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 12, "comments": 8}
+    },
+    {
+    "sender-name": "Wendy Xiong",
+    "sender-id": "wendyxiong",
+    "sender-avatar": "https://randomuser.me/api/portraits/women/25.jpg",
+    "message": "Please review the updated project timeline. 📅 #ProjectManagement",
+    "message-id": "25",
+    "message-time": "2023-10-02T07:00:00Z",
+    "message-attachments": [],
+    "message-reactions": {"likes": 10, "comments": 3}
+    }
+]

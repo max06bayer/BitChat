@@ -92,6 +92,7 @@
     max-width: 9rem;
     width: fit-content;
     overflow: hidden;
+    box-shadow: 0px 0px 16px rgba(0, 0, 0, 0.75);
   }
 
   .trend-text {
