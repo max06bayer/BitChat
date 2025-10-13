@@ -16,6 +16,11 @@
     const date = new Date(isoTime);
     return date.toLocaleDateString(); // Only date
   }
+
+  // Highlight hashtags
+  function formatHashtags(text) {
+    return text.replace(/(#\w+)/g, `<span class="hashtag">$1</span>`);
+  }
 </script>
 
 <div class="message-container">
@@ -26,7 +31,9 @@
       <span class="name">{senderName}</span>
     </div>
 
-    <div class="text">{text}</div>
+    <div class="text">
+      {@html formatHashtags(text)}
+    </div>
 
     <div class="reactions-row">
       <div class="reactions">
@@ -75,6 +82,11 @@
     font-size: 0.9rem;
     color: #ccc;
     margin-bottom: 0.3rem;
+  }
+
+  :global(.hashtag) {
+    color: #ff0037;
+    font-weight: 500;
   }
 
   .name {

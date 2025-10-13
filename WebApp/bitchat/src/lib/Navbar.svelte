@@ -1,8 +1,15 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte";
   import NavButton from "./Button.svelte";
   import SearchBar from "./Search.svelte";
   import Icon from "./Icon.svelte";
-  let active_page = $state("home");
+
+  export let active_page;
+  const dispatch = createEventDispatcher();
+
+  function setActivePage(page: string) {
+    dispatch("navigate", page);
+  }
 </script>
 
 <link
@@ -33,9 +40,7 @@
       width="1rem"
       leftmargin="1rem"
       active={active_page === "home"}
-      activation={() => {
-        active_page = "home";
-      }}
+      activation={() => setActivePage("home")}
     />
     <NavButton
       activeicon="post-active.svg"
@@ -46,9 +51,7 @@
       width="1rem"
       leftmargin="1rem"
       active={active_page === "post"}
-      activation={() => {
-        active_page = "post";
-      }}
+      activation={() => setActivePage("post")}
     />
     <SearchBar
       activeicon="search-active.svg"
@@ -59,9 +62,7 @@
       width="1rem"
       leftmargin="1rem"
       active={active_page === "search"}
-      activation={() => {
-        active_page = "search";
-      }}
+      activation={() => setActivePage("search")}
     />
   </div>
   <div class="right">

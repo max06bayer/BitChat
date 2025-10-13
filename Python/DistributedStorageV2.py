@@ -11,7 +11,7 @@ class file_system_node:
         self.port = port
         self.local_ip = self.get_local_ip()
         self.public_ip = requests.get('https://api.ipify.org').content.decode('utf8')
-        self.DHT = [[] for bucket in range(16)]
+        self.DHT = [[] for _ in range(16)]
         self.CID = binascii.hexlify(os.urandom(2)).decode('utf-8') # Random 16 bit hash
         asyncio.run(self.start_node(bootstrap_nodes))
 

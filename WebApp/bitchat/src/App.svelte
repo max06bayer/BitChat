@@ -3,14 +3,23 @@
   import Trending from "./lib/Trending.svelte";
   import Profile from "./lib/Profile.svelte";
   import Home from "./lib/Home.svelte";
+
+  let active_page = "home";
+  function handleNavChange(event) {
+    active_page = event.detail;
+  }
 </script>
 
 <main>
   <div class="mobile-warning">⚠️ Funktioniert nur am Desktop.</div>
+
   <Trending />
   <Profile />
-  <Navbar />
-  <Home />
+
+  <Navbar {active_page} on:navigate={handleNavChange} />
+  {#if active_page === "home"}
+    <Home />
+  {/if}
 </main>
 
 <style>

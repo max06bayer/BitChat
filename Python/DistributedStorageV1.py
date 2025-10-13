@@ -166,8 +166,6 @@ class Node:
         return format(targetInt, '040x')
     
     def showDHT(self):
-        # Print the DHT
-        # os.system('clear')
         for i, bucket in enumerate(self.DHT):
             if len(bucket) == 0: continue
             print(f"Bucket {i}: ", end="")
