@@ -5,6 +5,8 @@
   import { credentials, messages } from '../store.js';
   import { PeerToPeerConnection } from '../networking.js';
   import LogConsole from '../lib/Console.svelte';
+  import { Link } from "svelte-routing";
+
   // Import the font for a modern look
   import "@fontsource/geist/300.css";
 
@@ -104,6 +106,8 @@
     </form>
   </div>
 </main>
+
+<Link to="/impressum" class="impressum-link">Impressum</Link>
 
 <style>
   /* Global styles for font and background */
@@ -247,4 +251,21 @@
   button:disabled svg {
     stroke: #666;
   }
+
+  :global(.impressum-link) {
+    position: fixed;
+    bottom: 1rem;
+    left: 1rem;
+    color: #a0a0a0;
+    text-decoration: underline;
+    font-size: 15px;
+    z-index: 100;
+    cursor: pointer;
+  }
+  :global(.impressum-link):hover {
+    color: #fff;
+    background: #2a2a2a;
+  }
+
+
 </style>

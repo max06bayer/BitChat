@@ -5,7 +5,7 @@
   import { navigate } from "svelte-routing";
   import { Router, Route, Link } from "svelte-routing";
   import Login from "./routes/Login.svelte";
-  import Main from "./routes/Main.svelte";
+  import Impressum from "./routes/Impressum.svelte";
 
   let public_key = null;
   let private_key = null;
@@ -16,11 +16,13 @@
       private_key = value.private_key;
       username = value.username;
   });
+
   onMount(() => {
-      if (!public_key || !private_key) {
-          navigate('/login');
-      }
+    if (window.location.pathname === "/") {
+      navigate("/login", { replace: true });
+    }
   });
+
 </script>
 
 <Router>
@@ -28,7 +30,7 @@
     <svelte:component this={component || Login} />
   </Route>
 
-  <Route path="/main" let:component>
-    <svelte:component this={component || Login} />
+  <Route path="/impressum" let:component>
+    <svelte:component this={component || Impressum} />
   </Route>
 </Router>
