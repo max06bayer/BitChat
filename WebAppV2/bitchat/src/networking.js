@@ -1,10 +1,9 @@
-
 import { Peer } from 'peerjs';
 import { logs } from '../src/store.js';
 import { connected_with_network } from '../src/store.js';
-import {hash_table} from '../src/store.js';
+import { hash_table } from '../src/store.js';
 
-const bootstrap_node = '4b155bdc91027be3f733b56ca238f16f2c609670b8079ee503d0e1c0fb9f9aef';
+const bootstrap_node = 'a3912a4d5fd8492188ac0e70441f342e6440ce77bcabe00c0becb8d41a02b998';
 
 function overrideConsole(method) {
   const original = console[method];
@@ -20,7 +19,11 @@ export class PeerToPeerConnection {
         this.peer = new Peer(peerId, {
             host: '188.245.50.153',
             port: 9000,
-            path: '/bitchat'
+            path: '/bitchat',
+            // The minimal config for reliable connections
+            config: {
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+            }
         });
         this.knownPeers = new Set();
 
@@ -33,15 +36,8 @@ export class PeerToPeerConnection {
 
         this.peer.on('connection', (conn) => {
             console.info('Incoming connection from:', conn.peer);
+            this.knownPeers.add(conn.peer); // Add incoming connections to known peers
             this.setupConnectionHandlers(conn);
-        });
-
-        this.peer.on('disconnected', () => {
-            console.error('Peer disconnected');
-        });
-
-        this.peer.on('close', () => {
-            console.warn('Peer connection closed');
         });
 
         this.peer.on('error', (err) => {
@@ -51,49 +47,41 @@ export class PeerToPeerConnection {
 
     connectToPeer(peerId) {
         const conn = this.peer.connect(peerId);
-
         conn.on('open', () => {
             console.info('Connected to peer:', peerId);
+            this.knownPeers.add(peerId); // Add outgoing connections to known peers
             this.setupConnectionHandlers(conn);
             connected_with_network.set(true);
         });
-
         conn.on('error', (err) => {
             console.error('Connection error with', peerId, ':', err);
         });
     }
 
-    addToHashTable(peerId) {
-      const peerFirst16BitsHex = peerId.slice(0, 4);
-      const myFirst16BitsHex = this.peer.id.slice(0, 4);
-      const hash0 = BigInt('0x' + peerFirst16BitsHex);
-      const hash1 = BigInt('0x' + myFirst16BitsHex);
-      const distance = hash0 ^ hash1;
-      return distance.toString(2).length - 1;
-    }
-
     setupConnectionHandlers(conn) {
         conn.on('data', (data) => {
             console.log('Received data:', data);
-            const [type, payload] = data.split(':');
+            const [type, ...payloadParts] = data.split(':');
+            const payload = payloadParts.join(':');
 
             if (type === 'node_info_request') {
-                // A peer is requesting our list of known peers.
                 const requestingPeerId = payload;
                 this.knownPeers.add(requestingPeerId);
                 const peerList = JSON.stringify(Array.from(this.knownPeers));
                 this.send(requestingPeerId, `node_info_response:${peerList}`);
-                
             } else if (type === 'node_info_response') {
-                // We have received a list of peers from the bootstrap node.
                 const newPeers = JSON.parse(payload);
                 newPeers.forEach(peerId => {
                     if (peerId !== this.peer.id && !this.knownPeers.has(peerId)) {
-                        this.knownPeers.add(peerId);
                         this.connectToPeer(peerId);
                     }
                 });
+            // --- START: ADDED CHAT LOGIC ---
+            } else if (type === 'chat_message') {
+                // When we receive a chat message, simply log it to the console.
+                console.log(`[CHAT] ${payload}`);
             }
+            // --- END: ADDED CHAT LOGIC ---
         });
 
         conn.on('close', () => {
@@ -102,17 +90,24 @@ export class PeerToPeerConnection {
         });
     }
 
-    send(peerId, message) {
-        // Use this.peer.connections to check for existing connections
-        if (this.peer.connections[peerId] && this.peer.connections[peerId].length > 0) {
-            const conn = this.peer.connections[peerId][0];
-            if (conn.open) {
-                conn.send(message);
-            } else {
-                console.warn('Connection to', peerId, 'is not open.');
+    // --- START: NEW BROADCAST METHOD ---
+    broadcast(message) {
+        console.log(`Broadcasting to ${this.knownPeers.size} peers: ${message}`);
+        this.knownPeers.forEach(peerId => {
+            // We only send to peers other than ourselves and the bootstrap node
+            if (peerId !== this.peer.id && peerId !== bootstrap_node) {
+                 this.send(peerId, message);
             }
+        });
+    }
+    // --- END: NEW BROADCAST METHOD ---
+
+    send(peerId, message) {
+        const conn = this.peer.connections[peerId]?.[0];
+        if (conn && conn.open) {
+            conn.send(message);
         } else {
-            console.warn('No connection to', peerId, '. Use connectToPeer first.');
+            console.warn('No open connection to', peerId);
         }
     }
 }

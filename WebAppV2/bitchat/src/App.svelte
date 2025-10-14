@@ -29,6 +29,6 @@
   </Route>
 
   <Route path="/main" let:component>
-    <svelte:component this={component || Main} />
+    <svelte:component this={component || Login} />
   </Route>
 </Router>
