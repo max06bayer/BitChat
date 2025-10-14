@@ -1,5 +1,5 @@
 import { Peer } from 'peerjs';
-import { logs } from '../src/store.js';
+import { logs, messages } from '../src/store.js'; // <-- IMPORT MESSAGES
 import { connected_with_network } from '../src/store.js';
 import { hash_table } from '../src/store.js';
 
@@ -17,10 +17,10 @@ function overrideConsole(method) {
 export class PeerToPeerConnection {
     constructor(peerId = null) {
         this.peer = new Peer(peerId, {
-            host: '188.245.50.153',
-            port: 9000,
-            path: '/bitchat',
-            // The minimal config for reliable connections
+            host: 'bitchat.baby', // Your new domain
+            path: '/bitchat',   // The path Nginx is listening for
+            secure: true,       // Use a secure connection (WSS)
+            debug: 3,
             config: {
                 iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
             }
@@ -36,7 +36,7 @@ export class PeerToPeerConnection {
 
         this.peer.on('connection', (conn) => {
             console.info('Incoming connection from:', conn.peer);
-            this.knownPeers.add(conn.peer); // Add incoming connections to known peers
+            this.knownPeers.add(conn.peer);
             this.setupConnectionHandlers(conn);
         });
 
@@ -49,7 +49,7 @@ export class PeerToPeerConnection {
         const conn = this.peer.connect(peerId);
         conn.on('open', () => {
             console.info('Connected to peer:', peerId);
-            this.knownPeers.add(peerId); // Add outgoing connections to known peers
+            this.knownPeers.add(peerId);
             this.setupConnectionHandlers(conn);
             connected_with_network.set(true);
         });
@@ -57,7 +57,7 @@ export class PeerToPeerConnection {
             console.error('Connection error with', peerId, ':', err);
         });
     }
-
+    
     setupConnectionHandlers(conn) {
         conn.on('data', (data) => {
             console.log('Received data:', data);
@@ -76,12 +76,10 @@ export class PeerToPeerConnection {
                         this.connectToPeer(peerId);
                     }
                 });
-            // --- START: ADDED CHAT LOGIC ---
             } else if (type === 'chat_message') {
-                // When we receive a chat message, simply log it to the console.
-                console.log(`[CHAT] ${payload}`);
+                // --- UPDATE UI INSTEAD OF CONSOLE ---
+                messages.update(msgs => [...msgs, payload]);
             }
-            // --- END: ADDED CHAT LOGIC ---
         });
 
         conn.on('close', () => {
@@ -90,17 +88,14 @@ export class PeerToPeerConnection {
         });
     }
 
-    // --- START: NEW BROADCAST METHOD ---
     broadcast(message) {
         console.log(`Broadcasting to ${this.knownPeers.size} peers: ${message}`);
         this.knownPeers.forEach(peerId => {
-            // We only send to peers other than ourselves and the bootstrap node
-            if (peerId !== this.peer.id && peerId !== bootstrap_node) {
+            if (peerId !== this.peer.id) {
                  this.send(peerId, message);
             }
         });
     }
-    // --- END: NEW BROADCAST METHOD ---
 
     send(peerId, message) {
         const conn = this.peer.connections[peerId]?.[0];
