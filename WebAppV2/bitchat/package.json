@@ -16,6 +16,7 @@
   "dependencies": {
     "@fontsource/geist": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
+    "@fontsource/questrial": "^5.2.8",
     "crypto-js": "^4.2.0",
     "peerjs": "^1.5.5",
     "svelte-routing": "^2.13.0",

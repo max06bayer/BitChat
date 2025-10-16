@@ -78,7 +78,7 @@ export class PeerToPeerConnection {
                 });
             } else if (type === 'chat_message') {
                 // --- UPDATE UI INSTEAD OF CONSOLE ---
-                messages.update(msgs => [...msgs, payload]);
+                messages.update(msgs => [payload, ...msgs]);
             }
         });
 
