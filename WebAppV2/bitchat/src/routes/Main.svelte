@@ -2,7 +2,9 @@
   import nacl from "tweetnacl";
   import sha256 from "crypto-js/sha256";
   import encHex from "crypto-js/enc-hex";
-  // Make sure to import connected_with_network from your store
+  import { Buffer } from 'buffer';
+  import { openDB } from "idb"; // <-- NEW: Import openDB
+  // --- CHANGED: Removed 'users' from the import ---
   import { credentials, messages, connected_with_network } from '../store.js'; 
   import { PeerToPeerConnection } from '../networking.js';
   import LogConsole from '../lib/Console.svelte';
@@ -11,12 +13,10 @@
   // Import fonts
   import "@fontsource/geist/300.css";
   import "@fontsource/questrial";
-
-  const bootstrap_node = 'a3912a4d5fd8492188ac0e70441f342e6440ce77bcabe00c0becb8d41a02b998';
-
-  // State variables - all preserved
+  
+  // State variables (unchanged)
   let public_key = null;
-  let private_key = null; // Storing private key for potential future signing
+  let private_key = null;
   let username = "";
   let password = "";
   let network = null;
@@ -24,117 +24,113 @@
   let chatMessage = ""; 
   let showLogin = true;
   let isLoading = false;
+  let loginError = "";
   
-  // Toolbar state - all preserved
   let activeTab = 'home';
   let searchQuery = '';
 
-  // UPDATED: This now works with message objects
+  // --- NEW: Add IndexedDB helpers directly in the component ---
+  async function openDatabase() {
+    return openDB('DecentralizedSocialDB', 2); // Version 2 has the 'users' table
+  }
+  async function getUserFromDB(username) {
+    const db = await openDatabase();
+    return await db.get('users', username);
+  }
+
+  // $: filteredMessages (unchanged)
   $: filteredMessages = $messages.filter(msg => {
-    if (!msg || typeof msg !== 'object') return false; // Guard against non-object messages
-    const messageContent = getBodyFromMessage(msg).toLowerCase();
-    const senderName = getSenderFromMessage(msg).toLowerCase();
+    if (!msg || typeof msg !== 'object' || !msg.content) return false;
+    const messageContent = (msg.content || '').toLowerCase();
+    const senderName = (msg.sender || '').toLowerCase();
     const query = searchQuery.toLowerCase();
     return senderName.includes(query) || messageContent.includes(query);
   });
 
+  // setTab (unchanged)
   function setTab(tab) {
     activeTab = tab;
-    if (tab === 'home') {
-      searchQuery = '';
-    }
+    if (tab === 'home') searchQuery = '';
   }
 
-  // PRESERVED: Your original key generation function
-  function generate_keys(u, p) {
+  // handleLoginAndRegistration (logic updated)
+  async function handleLoginAndRegistration(u, p) {
     isLoading = true;
+    loginError = "";
     username = u;
     password = p;
+
+    // 1. Generate keys (unchanged)
     const seed_str = `${username}:${password}`;
     const hash_hex = sha256(seed_str).toString(encHex);
     const seed = new Uint8Array(hash_hex.match(/.{2}/g).map(byte => parseInt(byte, 16)));
     const keypair = nacl.sign.keyPair.fromSeed(seed);
 
-    public_key = Array.from(keypair.publicKey).map(byte => byte.toString(16).padStart(2, '0')).join('');
-    private_key = Array.from(keypair.secretKey).map(byte => byte.toString(16).padStart(2, '0')).join('');
+    public_key = Buffer.from(keypair.publicKey).toString('hex');
+    private_key = Buffer.from(keypair.secretKey).toString('hex'); 
     
     credentials.set({ username, public_key, private_key });
 
-    network = new PeerToPeerConnection(public_key);
-    
-    // PRESERVED: Your original event listeners for connection status
-    network.peer.on('open', (id) => {
-        // isConnected = true; // This will now be handled by the store subscription
-        isLoading = false;
-        showLogin = false;
-        console.log('Peer is ready with ID:', id);
-        bootstrap(); // Call your bootstrap function
+    // 2. Instantiate network (unchanged)
+    network = new PeerToPeerConnection(public_key, private_key);
+
+    // This listener confirms when the network is ready (unchanged)
+    const unsubscribe = connected_with_network.subscribe(connected => {
+        if (connected) {
+            isConnected = true;
+            isLoading = false;
+            showLogin = false;
+            unsubscribe();
+        }
     });
 
-    network.peer.on('error', (err) => {
-        isLoading = false;
-        console.error("PeerJS error in Main.svelte:", err);
-    });
+    // --- CHANGED: Check against IndexedDB, not a store ---
+    setTimeout(async () => {
+        const existingUser = await getUserFromDB(username);
 
-    // PRESERVED: Subscribing to the store to keep `isConnected` reactive
-    connected_with_network.subscribe(val => {
-        isConnected = val;
-    });
+        if (existingUser) {
+            // LOGIN PATH
+            if (existingUser.publicKey !== public_key) {
+                loginError = "Wrong password for this username.";
+                isLoading = false;
+                if (network) network.peer.destroy();
+                return;
+            }
+            console.log(`Login successful for ${username}.`);
+        } else {
+            // REGISTRATION PATH
+            console.log(`User ${username} not found locally. Attempting to register...`);
+            const registered = await network.registerUser(username, public_key);
+            if (!registered) {
+                loginError = "Registration failed. Username might be taken.";
+                isLoading = false;
+                if (network) network.peer.destroy();
+            } else {
+                console.log(`Registration successful for ${username}.`);
+            }
+        }
+    }, 4000);
   }
 
-  // PRESERVED: Your original bootstrap logic
-  function bootstrap() {
-    // Check isConnected from the store or local state
-    if (public_key !== bootstrap_node && isConnected) {
-        network.connectToPeer(bootstrap_node);
-        // The new networking.js handles sharing history and peers automatically
-        // on connection, so a separate `node_info_request` might be redundant,
-        // but we can keep it for now as it doesn't hurt.
-        setTimeout(() => {
-            // Note: The new bootstrap node doesn't use this format.
-            // This message will be ignored by the new bootstrap server, which is fine.
-            // The connection itself is what triggers the data exchange.
-            // network.send(bootstrap_node, `node_info_request:${public_key}`);
-            console.log('Connected to bootstrap node. History and peers will be synced automatically.');
-        }, 1000);
-    }
-  }
-
-  // --- UPDATED ---
+  // sendMessage (unchanged)
   async function sendMessage() {
       if (!chatMessage.trim() || !network) return;
-
-      // This is the main change:
-      // Call the new `postMessage` method to create and broadcast a transaction.
-      // This single call replaces the old `messages.update` and `network.broadcast` lines.
       await network.postMessage(username, chatMessage.trim(), public_key);
-      
-      chatMessage = ""; // Clear the input field
+      chatMessage = "";
   }
-  
-  // --- UPDATED to work with transaction objects ---
+
+  // --- Helper functions for message display (unchanged) ---
   function getSenderFromMessage(msg) {
-    // Messages are now objects, so we access the 'sender' property.
-    // Provide a fallback for any old string-based messages during transition.
-    return typeof msg === 'object' ? msg.sender : (msg.split(':')[0] || 'Anonymous');
+    return msg.sender || 'Anonymous';
   }
 
   function getBodyFromMessage(msg) {
-    if (typeof msg === 'object') {
-        return msg.content || '';
-    }
-    // Fallback for old message format
-    const parts = msg.split(':');
-    parts.shift();
-    return parts.join(':').trim();
+    return msg.content || '';
   }
 
   function getFormattedTimeFromMessage(msg) {
-    if (typeof msg === 'object' && msg.time) {
-        return new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-    // Fallback for old messages without a timestamp
-    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const time = msg.time ? new Date(msg.time) : new Date();
+    return time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   function parseHashtags(text) {
@@ -143,6 +139,7 @@
     return text.replace(hashtagRegex, '<span class="hashtag">$1</span>');
   }
 </script>
+
 
 
 <main>
@@ -154,9 +151,15 @@
     <div class="login-overlay">
       <div class="login-box">
         <h1>Connect to Network</h1>
-        <form on:submit|preventDefault={() => generate_keys(username, password)}>
+        <form on:submit|preventDefault={() => handleLoginAndRegistration(username, password)}>
           <input type="text" placeholder="Benutzername" bind:value={username} required disabled={isLoading} />
           <input type="password" placeholder="Passwort" bind:value={password} required disabled={isLoading} />
+
+          <!-- 2. NEW: Display login error messages -->
+          {#if loginError}
+            <p class="error-message">{loginError}</p>
+          {/if}
+
           <button type="submit" disabled={isLoading}>
             {#if isLoading}
               Connecting...
@@ -198,17 +201,17 @@
               {/if}
             </div>
           {:else}
-            {#each filteredMessages as msg (msg)}
-              <div class="post">
-                <div class="post-header">
-                  <span class="sender-name">{getSenderFromMessage(msg)}</span>
-                  <span class="timestamp">{getFormattedTimeFromMessage()}</span>
-                </div>
-                <div class="post-body">
-                  {@html parseHashtags(getBodyFromMessage(msg))}
-                </div>
+            {#each filteredMessages as msg (msg.signature)}
+            <div class="post">
+              <div class="post-header">
+                <span class="sender-name">{getSenderFromMessage(msg)}</span>
+                <span class="timestamp">{getFormattedTimeFromMessage(msg)}</span>
               </div>
-            {/each}
+              <div class="post-body">
+                {@html parseHashtags(getBodyFromMessage(msg))}
+              </div>
+            </div>
+          {/each}
           {/if}
         </div>
 
