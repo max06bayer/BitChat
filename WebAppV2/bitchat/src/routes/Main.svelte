@@ -9,6 +9,8 @@
   import { PeerToPeerConnection } from '../networking.js';
   import LogConsole from '../lib/Console.svelte';
   import { Link } from "svelte-routing";
+  import Trending from "../lib/Trending.svelte";
+  import CryptoJS from 'crypto-js';
 
   // Import fonts
   import "@fontsource/geist/300.css";
@@ -29,6 +31,66 @@
   let activeTab = 'home';
   let searchQuery = '';
 
+  let fileInput;
+
+  let imagePreviewUrl = null;
+  let imagePreviewFilename = null;
+
+
+  // --- NEW: Function to trigger the hidden file input ---
+  function handleImageUpload() {
+    fileInput.click(); // Programmatically click the hidden file input
+  }
+
+  // --- NEW: Function to process the selected image ---
+    // --- MODIFIED: Function to process the selected image ---
+  async function processImage(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    imagePreviewUrl = URL.createObjectURL(file);
+    imagePreviewFilename = file.name;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      // 1. Convert the ArrayBuffer (e.target.result) to a WordArray
+      const wordArray = CryptoJS.lib.WordArray.create(e.target.result);
+
+      // 2. Hash the WordArray to get the correct hash from the file content
+      const hash = CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex);
+
+      // 3. Log the unique hash to the console
+      console.log(hash);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // Helper to extract hashtags from a string:
+  function getHashtagsFromText(text) {
+    if (typeof text !== 'string') return [];
+    // This will match hashtags of the format #word123 (no spaces, no punctuation in tag)
+    return (text.match(/#\w+/g) || []);
+  }
+
+  // Compute top hashtags by usage count across all messages:
+  $: hashtagCounts = (() => {
+    const counts = {};
+    for (const msg of $messages) {
+      for (const hashtag of getHashtagsFromText(msg.content || "")) {
+        const tag = hashtag.toLowerCase();
+        counts[tag] = (counts[tag] || 0) + 1;
+      }
+    }
+    return counts;
+  })();
+
+  // Top 10 hashtags, sorted by usage (descending), no duplicates:
+  $: topHashtags = Object.entries(hashtagCounts)
+    .sort((a, b) => b[1] - a[1]) // descending
+    .slice(0, 10)                 // take top 10
+    .map(([tag]) => tag);
+
+
   // --- NEW: Add IndexedDB helpers directly in the component ---
   async function openDatabase() {
     return openDB('DecentralizedSocialDB', 2); // Version 2 has the 'users' table
@@ -37,6 +99,17 @@
     const db = await openDatabase();
     return await db.get('users', username);
   }
+
+    // --- NEW: Function to clear the image preview ---
+  function removeImagePreview() {
+    imagePreviewUrl = null;
+    imagePreviewFilename = null;
+    // Also clear the file input so the same file can be re-selected
+    if (fileInput) {
+      fileInput.value = "";
+    }
+  }
+
 
   // $: filteredMessages (unchanged)
   $: filteredMessages = $messages.filter(msg => {
@@ -138,13 +211,27 @@
     const hashtagRegex = /(#\w+)/g;
     return text.replace(hashtagRegex, '<span class="hashtag">$1</span>');
   }
+
+  function handleHashtagSearch(tag) {
+    searchQuery = tag;
+    activeTab = 'search'; // Optional: switch to search tab if you want
+  }
 </script>
-
-
 
 <main>
   <div class="top-left-logo">
     <img src="/bitchat.svg" alt="BitChat Logo" />
+  </div>
+
+  {#if !showLogin && username}
+    <div class="username-indicator">
+      {username}
+    </div>
+  {/if}
+
+  <!-- NEW: Add the Trending component here -->
+  <div class="trending-container">
+    <Trending trends={topHashtags} onHashtagClick={handleHashtagSearch} />
   </div>
   
   {#if showLogin}
@@ -215,6 +302,14 @@
           {/if}
         </div>
 
+        {#if imagePreviewUrl}
+          <div class="image-preview-container">
+            <img src={imagePreviewUrl} alt="Image preview" class="preview-image" />
+            <span class="preview-filename">{imagePreviewFilename}</span>
+            <button class="remove-preview-btn" on:click={removeImagePreview}>&times;</button>
+          </div>
+        {/if}
+
         <form on:submit|preventDefault={sendMessage} class="chat-input-form">
           <input 
             type="text" 
@@ -222,6 +317,24 @@
             placeholder={isConnected ? "Poste etwas..." : "Connect to post a message"}
             disabled={!isConnected} 
           />
+
+          <!-- NEW: Image Upload Icon -->
+          <img 
+            src="/image-icon.svg" 
+            alt="Upload Image" 
+            class="upload-icon"
+            on:click={handleImageUpload}
+          />
+          
+          <!-- NEW: Hidden File Input -->
+          <input 
+            type="file" 
+            accept="image/*" 
+            style="display: none;" 
+            bind:this={fileInput}
+            on:change={processImage}
+          />
+
           <button type="submit" disabled={!isConnected} aria-label="Send">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
           </button>
@@ -345,6 +458,7 @@
     height: 100%;
     max-width: 800px;
     margin: 0 auto;
+    transform: translateX(6rem);
   }
 
   /* --- START: New and Adjusted Styles --- */
@@ -585,4 +699,101 @@
     height: 40px;
     width: auto;
   }
+
+  .chat-input-form {
+    position: relative; /* Needed for absolute positioning of the icon */
+    display: flex;
+    align-items: center;
+  }
+
+  .chat-input-form input[type="text"] {
+    padding-right: 60px; /* Make space for the new icon and the send button */
+    max-width: 18rem;
+  }
+
+  .upload-icon {
+    position: absolute;
+    right: 50px; /* Position it to the left of the send button */
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    margin-right: 2.5em;
+  }
+
+  .upload-icon:hover {
+    opacity: 1;
+  }
+
+  .trending-container {
+    position: absolute; /* Takes the element out of the normal page flow */
+    top: -8px;          /* Position it from the top */
+    left: 50%;          /* Center it horizontally */
+    margin-left: -6rem;
+    z-index: 10;        /* Ensure it sits on top of other content */
+  }
+
+  .username-indicator {
+    position: absolute;
+    top: 1.5rem;
+    right: 2.5rem;
+    background: #111111;
+    border: 1px solid #353535;
+    border-radius: 14px;
+    padding: 0.5rem 0.5rem;
+    color: #fff;
+    font-family: 'Geist', 'Questrial', sans-serif;
+    font-weight: 300;
+    font-size: 16px;
+    box-shadow: 0px 0px 16px rgba(0,0,0,0.75);
+    z-index: 50;
+    letter-spacing: 0.02em;
+    min-width: 3rem;
+    text-align: center;
+    user-select: text;
+  }
+
+  .image-preview-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    margin-bottom: 20px;
+    background-color: #000000;
+    border: 1px solid rgb(78, 78, 78);
+    border-radius: 14px;
+    position: relative;
+    margin-right: 1rem;
+    margin-left: 1rem;
+  }
+
+  .preview-image {
+    max-height: 50px;
+    max-width: 50px;
+    border-radius: 10px;
+    object-fit: cover;
+    border: 1px solid rgb(68, 68, 68);
+  }
+
+  .preview-filename {
+    font-size: 0.9em;
+    color: #f6f6f6;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .remove-preview-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    color: #888;
+    margin-left: auto;
+  }
+
+  .remove-preview-btn:hover {
+    color: #ffffff;
+  }
+
 </style>
