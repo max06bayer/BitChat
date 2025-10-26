@@ -788,7 +788,7 @@
     font-size: 20px;
     line-height: 1;
     cursor: pointer;
-    color: #888;
+    color: #9c9c9c;
     margin-left: auto;
   }
 
