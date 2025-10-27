@@ -11,7 +11,6 @@ if (typeof window !== 'undefined' && !window.Buffer) {
 }
 
 const BOOTSTRAP_NODES = [
-    'a3912a4d5fd8492188ac0e70441f342e6440ce77bcabe00c0becb8d41a02b998',
     '09f7874a33816b89be86d85bb6149d07dc7f8cf3b4d89a090a428ae27a19ea90',
     'ae17321686948704d06522bd8d3c51fd105266d86a5d1138e70a30f1e9d60041',
     'b8d41a02b998a3912a4d5fd8492188ac0e70441f342e6440ce77bcabe00c0becb',
@@ -19,8 +18,7 @@ const BOOTSTRAP_NODES = [
     'ce77bcabe00c0becb8d41a02b998a3912a4d5fd8492188ac0e70441f342e6440c',
     '492188ac0e70441f342e6440ca3912a4d5fd8ce77bcabe00c0becb8d41a02b998',
     'fd8492188ac0e70441f342e6440ce77bcabe00c0becb8d41a02b998a3912a4d5f',
-    '342e6440ce77bcabe00c0becb8d41a02b998a3912a4d5fd8492188ac0e70441f',
-    'e00c0becb8d41a02b998a3912a4d5fd8492188ac0e70441f342e6440ce77bcab'
+    '342e6440ce77bcabe00c0becb8d41a02b998a3912a4d5fd8492188ac0e70441f'
 ];
 
 // --- Console Override (Preserved) ---
@@ -129,10 +127,8 @@ function xorDistance(hash1, hash2) {
 }
 
 // Find the 3 closest nodes to a given hash
-// Find the 3 closest nodes to a given hash
 function findClosestNodes(targetHash, knownPeers, count = 3) {
-    // CHANGED: Remove the filter that excludes bootstrap nodes
-    const peerArray = Array.from(knownPeers); // Now includes bootstrap nodes!
+    const peerArray = Array.from(knownPeers);
     
     console.log(`🔍 Finding closest nodes to hash: ${targetHash.substring(0, 16)}...`);
     console.log(`   Available peers (including bootstrap): ${peerArray.length}`);
@@ -259,6 +255,7 @@ export class PeerToPeerConnection {
             type: 'post', 
             sender: name, 
             hashes: hashes,
+            likes: [], // NEW: Initialize empty likes array
             time: new Date().toISOString(), 
             publicKey 
         };
@@ -325,6 +322,105 @@ export class PeerToPeerConnection {
         }
         
         console.log(`✅ === POST COMPLETE ===\n`);
+    }
+
+    // NEW: Like a post
+    async likePost(postSignature, publicKey) {
+        if (!this.privateKey) {
+            console.error("Private key not available for liking.");
+            return false;
+        }
+
+        console.log(`\n❤️ === LIKING POST ===`);
+        console.log(`   Post signature: ${postSignature.substring(0, 16)}...`);
+        console.log(`   Your public key: ${publicKey.substring(0, 16)}...`);
+
+        const likeData = {
+            type: 'like',
+            postSignature,
+            publicKey,
+            time: new Date().toISOString()
+        };
+        const signature = await createSignedMessage(this.privateKey, likeData);
+        const likeTransaction = { ...likeData, signature };
+
+        console.log(`   Broadcasting like to network...`);
+        this.broadcast(`transaction:${JSON.stringify(likeTransaction)}`);
+
+        // Update local message store
+        messages.update(current => {
+            return current.map(msg => {
+                if (msg.signature === postSignature) {
+                    if (!msg.likes) msg.likes = [];
+                    if (!msg.likes.includes(publicKey)) {
+                        msg.likes.push(publicKey);
+                    }
+                }
+                return msg;
+            });
+        });
+
+        // Store updated transaction
+        const db = await openDatabase();
+        const tx = await db.get('transactions', postSignature);
+        if (tx) {
+            if (!tx.likes) tx.likes = [];
+            if (!tx.likes.includes(publicKey)) {
+                tx.likes.push(publicKey);
+            }
+            await db.put('transactions', tx);
+        }
+
+        console.log(`✅ Like sent!\n`);
+        return true;
+    }
+
+    // NEW: Unlike a post
+    async unlikePost(postSignature, publicKey) {
+        if (!this.privateKey) {
+            console.error("Private key not available for unliking.");
+            return false;
+        }
+
+        console.log(`\n💔 === UNLIKING POST ===`);
+        console.log(`   Post signature: ${postSignature.substring(0, 16)}...`);
+
+        const unlikeData = {
+            type: 'unlike',
+            postSignature,
+            publicKey,
+            time: new Date().toISOString()
+        };
+        const signature = await createSignedMessage(this.privateKey, unlikeData);
+        const unlikeTransaction = { ...unlikeData, signature };
+
+        console.log(`   Broadcasting unlike to network...`);
+        this.broadcast(`transaction:${JSON.stringify(unlikeTransaction)}`);
+
+        // Update local message store
+        messages.update(current => {
+            return current.map(msg => {
+                if (msg.signature === postSignature) {
+                    if (msg.likes) {
+                        msg.likes = msg.likes.filter(pk => pk !== publicKey);
+                    }
+                }
+                return msg;
+            });
+        });
+
+        // Store updated transaction
+        const db = await openDatabase();
+        const tx = await db.get('transactions', postSignature);
+        if (tx) {
+            if (tx.likes) {
+                tx.likes = tx.likes.filter(pk => pk !== publicKey);
+            }
+            await db.put('transactions', tx);
+        }
+
+        console.log(`✅ Unlike sent!\n`);
+        return true;
     }
 
     // Retrieve content from DHT
@@ -522,6 +618,54 @@ export class PeerToPeerConnection {
                             if (current.some(m => m.signature === transaction.signature)) return current;
                             return [transaction, ...current].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
                         });
+                    } else if (transaction.type === 'like') {
+                        // NEW: Handle like transactions
+                        console.log(`❤️ Received like from ${transaction.publicKey.substring(0, 16)}... for post ${transaction.postSignature.substring(0, 16)}...`);
+                        
+                        const db = await openDatabase();
+                        const post = await db.get('transactions', transaction.postSignature);
+                        if (post) {
+                            if (!post.likes) post.likes = [];
+                            if (!post.likes.includes(transaction.publicKey)) {
+                                post.likes.push(transaction.publicKey);
+                                await db.put('transactions', post);
+                                
+                                // Update messages store
+                                messages.update(current => {
+                                    return current.map(msg => {
+                                        if (msg.signature === transaction.postSignature) {
+                                            if (!msg.likes) msg.likes = [];
+                                            if (!msg.likes.includes(transaction.publicKey)) {
+                                                msg.likes.push(transaction.publicKey);
+                                            }
+                                        }
+                                        return msg;
+                                    });
+                                });
+                            }
+                        }
+                    } else if (transaction.type === 'unlike') {
+                        // NEW: Handle unlike transactions
+                        console.log(`💔 Received unlike from ${transaction.publicKey.substring(0, 16)}... for post ${transaction.postSignature.substring(0, 16)}...`);
+                        
+                        const db = await openDatabase();
+                        const post = await db.get('transactions', transaction.postSignature);
+                        if (post && post.likes) {
+                            post.likes = post.likes.filter(pk => pk !== transaction.publicKey);
+                            await db.put('transactions', post);
+                            
+                            // Update messages store
+                            messages.update(current => {
+                                return current.map(msg => {
+                                    if (msg.signature === transaction.postSignature) {
+                                        if (msg.likes) {
+                                            msg.likes = msg.likes.filter(pk => pk !== transaction.publicKey);
+                                        }
+                                    }
+                                    return msg;
+                                });
+                            });
+                        }
                     }
                 } catch(e) {
                     console.error("Error processing transaction payload:", e);

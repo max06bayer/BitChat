@@ -51,13 +51,11 @@
       const result = e.target.result;
       
       if (result instanceof ArrayBuffer) {
-        // Convert ArrayBuffer to WordArray for hashing
         const wordArray = CryptoJS.lib.WordArray.create(result);
         const hash = CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex);
         
         imagePreviewHash = hash;
         
-        // Convert ArrayBuffer to base64 for transmission
         const uint8Array = new Uint8Array(result);
         const binaryString = uint8Array.reduce((data, byte) => data + String.fromCharCode(byte), '');
         imagePreviewData = btoa(binaryString);
@@ -93,7 +91,6 @@
   async function openDatabase() {
     return openDB('DecentralizedSocialDB', 4, {
       upgrade(db, oldVersion) {
-        // Create all object stores if they don't exist
         if (!db.objectStoreNames.contains('transactions')) {
           db.createObjectStore('transactions', { keyPath: 'signature' });
         }
@@ -122,7 +119,6 @@
     }
   }
 
-  // Get content from message (either from cache or retrieve from DHT)
   function getContentFromMessage(msg) {
     if (!msg || !msg.hashes) return msg.content || '';
     
@@ -131,7 +127,6 @@
       return $contentStorage[contentHash].data;
     }
     
-    // Trigger async retrieval
     if (network) {
       network.getContentFromDHT(contentHash).then(content => {
         if (content) {
@@ -148,7 +143,6 @@
     return 'Loading...';
   }
 
-  // Get image from message
   function getImageFromMessage(msg) {
     if (!msg || !msg.hashes || !msg.hashes.image) return null;
     
@@ -157,7 +151,6 @@
       return $contentStorage[imageHash].data;
     }
     
-    // Trigger async retrieval
     if (network) {
       network.getContentFromDHT(imageHash).then(content => {
         if (content) {
@@ -193,7 +186,6 @@
     username = u;
     password = p;
 
-    // Ensure database is upgraded before proceeding
     await openDatabase();
 
     const seed_str = `${username}:${password}`;
@@ -242,7 +234,6 @@
     }, 4000);
   }
 
-  // sendMessage now passes image data and hash to postMessage
   async function sendMessage() {
       if (!chatMessage.trim() || !network) return;
       
@@ -256,6 +247,61 @@
       
       chatMessage = "";
       removeImagePreview();
+  }
+
+  // NEW: Like/Unlike functionality
+  function isLikedByMe(msg) {
+    if (!msg.likes || !public_key) return false;
+    return msg.likes.includes(public_key);
+  }
+
+  function getLikeCount(msg) {
+    return msg.likes ? msg.likes.length : 0;
+  }
+
+  async function toggleLike(msg) {
+    if (!network || !public_key) return;
+    
+    const liked = isLikedByMe(msg);
+    
+    if (liked) {
+      await network.unlikePost(msg.signature, public_key);
+    } else {
+      await network.likePost(msg.signature, public_key);
+    }
+  }
+
+  // NEW: Share functionality
+  async function sharePost(msg) {
+    const content = getContentFromMessage(msg);
+    const sender = getSenderFromMessage(msg);
+    const text = `${sender}: ${content}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Post by ${sender}`,
+          text: text
+        });
+        console.log('Post shared successfully');
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.error('Error sharing:', err);
+          fallbackCopyToClipboard(text);
+        }
+      }
+    } else {
+      fallbackCopyToClipboard(text);
+    }
+  }
+
+  function fallbackCopyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      console.log('Copied to clipboard!');
+      alert('Post copied to clipboard!');
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+    });
   }
 
   function getSenderFromMessage(msg) {
@@ -367,6 +413,34 @@
                   </div>
                 {/if}
               {/if}
+              
+              <!-- NEW: Like and Share buttons -->
+              <div class="post-actions">
+                <button 
+                  class="action-btn like-btn" 
+                  class:liked={isLikedByMe(msg)}
+                  on:click={() => toggleLike(msg)}
+                  disabled={!isConnected}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill={isLikedByMe(msg) ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                  </svg>
+                  <span class="like-count">{getLikeCount(msg)}</span>
+                </button>
+                
+                <button 
+                  class="action-btn share-btn"
+                  on:click={() => sharePost(msg)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="18" cy="5" r="3"></circle>
+                    <circle cx="6" cy="12" r="3"></circle>
+                    <circle cx="18" cy="19" r="3"></circle>
+                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                  </svg>
+                </button>
+              </div>
             </div>
           {/each}
           {/if}
@@ -874,20 +948,67 @@
   }
 
   .post-image-container {
-    margin-bottom: -5px;
+    margin-bottom: 0px;
   }
 
-  .post-image-placeholder {
-    width: 100%;
-    height: 100px;
-    border-radius: 12px;
-    margin-top: 12px;
-    background-color: #222;
+  /* NEW: Post action buttons */
+  .post-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 5px;
+    padding-top: 6px;
+    border-top: none;
+  }
+
+  .action-btn {
     display: flex;
     align-items: center;
-    justify-content: center;
-    color: #888;
-    font-size: 0.9em;
+    gap: 0.4rem;
+    padding: 0;
+    border-radius: 12px;
+    border: none;
+    background-color: transparent;
+    color: #999;
+    cursor: pointer;
+    font-family: "Geist", sans-serif;
+    font-size: 14px;
+    font-weight: 300;
+    transition: all 0.2s;
+  }
+
+  .action-btn:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: #fff;
+  }
+
+  .action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .like-btn svg {
+    transition: all 0.2s;
+    stroke-width: 1px;
+  }
+
+  .like-btn.liked {
+    color: #ff4458;
+    border-color: #ff4458;
+  }
+
+  .like-btn.liked svg {
+    fill: #ff4458;
+    stroke: #ff4458;
+  }
+
+  .like-count {
+    min-width: 20px;
+    text-align: left;
+  }
+
+  .share-btn:hover:not(:disabled) {
+    border-color: #0084ff;
+    color: #0084ff;
   }
 
 </style>
