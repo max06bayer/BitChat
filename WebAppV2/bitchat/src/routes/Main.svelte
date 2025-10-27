@@ -143,6 +143,15 @@
     return 'Loading...';
   }
 
+  function handlePostClick(event) {
+    // Check if the clicked element is a span with the 'hashtag' class
+    if (event.target.tagName === 'SPAN' && event.target.classList.contains('hashtag')) {
+        const hashtagText = event.target.innerText; // This will get the text, e.g., "#Svelte"
+      
+        handleHashtagSearch(hashtagText);
+    }
+  }
+
   function getImageFromMessage(msg) {
     if (!msg || !msg.hashes || !msg.hashes.image) return null;
     
@@ -402,7 +411,7 @@
                 <span class="sender-name">{getSenderFromMessage(msg)}</span>
                 <span class="timestamp">{getFormattedTimeFromMessage(msg)}</span>
               </div>
-              <div class="post-body">
+              <div class="post-body" on:click={handlePostClick}>
                 {@html parseHashtags(getBodyFromMessage(msg))}
               </div>
               {#if msg.hashes && msg.hashes.image}
@@ -977,7 +986,6 @@
   }
 
   .action-btn:hover:not(:disabled) {
-    background-color: rgba(255, 255, 255, 0.05);
     color: #fff;
   }
 
@@ -988,7 +996,7 @@
 
   .like-btn svg {
     transition: all 0.2s;
-    stroke-width: 1px;
+    stroke-width: 1.5px;
   }
 
   .like-btn.liked {
@@ -1009,6 +1017,10 @@
   .share-btn:hover:not(:disabled) {
     border-color: #0084ff;
     color: #0084ff;
+  }
+
+  .share-btn svg{
+    stroke-width: 1.5px;
   }
 
 </style>

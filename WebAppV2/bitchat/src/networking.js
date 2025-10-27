@@ -593,8 +593,13 @@ export class PeerToPeerConnection {
                 try {
                     const transaction = JSON.parse(payload);
                     const { signature, ...signedData } = transaction;
+                    const dataForVerification = JSON.parse(JSON.stringify(signedData));
+                    if (dataForVerification.likes) {
+                        dataForVerification.likes = [];
+                    }
+            
+                    const isSignatureValid = await verifySignature(transaction.publicKey, signature, dataForVerification);
 
-                    const isSignatureValid = await verifySignature(transaction.publicKey, signature, signedData);
                     if (!isSignatureValid) {
                         console.error("INVALID SIGNATURE. Discarding transaction.", transaction);
                         return;
