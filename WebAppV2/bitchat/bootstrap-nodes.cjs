@@ -25,9 +25,11 @@ const BOOTSTRAP_IDS = [
   'e00c0becb8d41a02b998a3912a4d5fd8492188ac0e70441f342e6440ce77bcab'
 ];
 
-// Shared state - DO NOT include bootstrap IDs here
+// Shared state
 const transactions = [];
 const knownPeers = new Set();
+// NEW: Content storage for DHT
+const contentStorage = new Map(); // hash -> { data, type, timestamp }
 
 // --- Main Function to Start a Node ---
 function startBootstrapNode(id) {
@@ -54,14 +56,13 @@ function startBootstrapNode(id) {
   });
   
   peer.on('connection', (conn) => {
-    // CRITICAL: Reject connections from other bootstrap nodes
+    // CHANGED: Accept connections from other bootstrap nodes for DHT storage
     if (BOOTSTRAP_IDS.includes(conn.peer)) {
-      console.log(`🚫 Rejecting connection from bootstrap node: ${conn.peer}`);
-      conn.close();
-      return;
+      console.log(`🔗 Connection from fellow bootstrap node: ${conn.peer.substring(0, 16)}...`);
+    } else {
+      console.log(`➡️ Incoming connection to ${id.substring(0, 16)}... from: ${conn.peer.substring(0, 16)}...`);
     }
     
-    console.log(`➡️ Incoming connection to ${id} from: ${conn.peer}`);
     knownPeers.add(conn.peer);
     
     conn.on('data', (data) => {
@@ -71,16 +72,16 @@ function startBootstrapNode(id) {
       const payload = data.substring(separatorIndex + 1);
       
       if (type === 'node_info_request') {
-        // CRITICAL: Only send non-bootstrap peers
+        // Send all non-bootstrap peers
         const nonBootstrapPeers = Array.from(knownPeers).filter(
           peerId => !BOOTSTRAP_IDS.includes(peerId)
         );
         
         conn.send(`node_info_response:${JSON.stringify(nonBootstrapPeers)}`);
-        console.log(`📋 Sent ${nonBootstrapPeers.length} peers to ${conn.peer}`);
+        console.log(`📋 Sent ${nonBootstrapPeers.length} peers to ${conn.peer.substring(0, 16)}...`);
         
         // Send transaction history
-        console.log(`✉️ Sending ${transactions.length} transactions to ${conn.peer}`);
+        console.log(`✉️ Sending ${transactions.length} transactions to ${conn.peer.substring(0, 16)}...`);
         for (const tx of transactions) {
           conn.send(`transaction:${JSON.stringify(tx)}`);
         }
@@ -88,24 +89,61 @@ function startBootstrapNode(id) {
         try {
           const transaction = JSON.parse(payload);
           if (!transactions.some(t => t.signature === transaction.signature)) {
-            console.log(`🏦 New transaction from ${transaction.sender}`);
+            console.log(`🦄 New transaction from ${transaction.sender}`);
             transactions.push(transaction);
             broadcast(`transaction:${payload}`, conn.peer);
           }
         } catch (error) {
           console.error("Error parsing transaction:", error);
         }
+      } else if (type === 'message-content-set') {
+        // NEW: Handle content storage requests
+        try {
+          const { hash, data, type: contentType } = JSON.parse(payload);
+          console.log(`💾 Storing content: ${hash.substring(0, 16)}... (type: ${contentType})`);
+          contentStorage.set(hash, { data, type: contentType, timestamp: Date.now() });
+          console.log(`   Total stored items: ${contentStorage.size}`);
+        } catch (error) {
+          console.error("Error storing content:", error);
+        }
+      } else if (type === 'message-content-get') {
+        // NEW: Handle content retrieval requests
+        try {
+          const { hash, requestId, messageLostCount } = JSON.parse(payload);
+          console.log(`🔎 Content request for: ${hash.substring(0, 16)}... (lost count: ${messageLostCount})`);
+          
+          const content = contentStorage.get(hash);
+          if (content) {
+            console.log(`   ✅ Found! Sending to ${conn.peer.substring(0, 16)}...`);
+            conn.send(`message-content-response:${JSON.stringify({
+              requestId,
+              hash,
+              data: content.data,
+              type: content.type,
+              success: true
+            })}`);
+          } else {
+            console.log(`   ❌ Not found locally`);
+            conn.send(`message-content-response:${JSON.stringify({
+              requestId,
+              hash,
+              success: false
+            })}`);
+          }
+        } catch (error) {
+          console.error("Error handling content request:", error);
+        }
       }
     });
     
     conn.on('close', () => {
-      console.log(`🚪 Connection closed with: ${conn.peer}`);
+      console.log(`🚪 Connection closed with: ${conn.peer.substring(0, 16)}...`);
       knownPeers.delete(conn.peer);
       console.log(`Total connected peers: ${knownPeers.size}`);
     });
     
     conn.on('error', (err) => {
-      console.error(`Connection error with ${conn.peer}:`, err.type);
+      console.error(`Connection error with ${conn.peer.substring(0, 16)}...:`, err.type);
     });
   });
   
@@ -133,6 +171,14 @@ function startBootstrapNode(id) {
 
 console.log('🚀 Starting bootstrap nodes...');
 BOOTSTRAP_IDS.forEach(startBootstrapNode);
+
+// NEW: Log storage stats periodically
+setInterval(() => {
+  console.log(`\n📊 === BOOTSTRAP NODE STATS ===`);
+  console.log(`   Total content items stored across all nodes: ${contentStorage.size}`);
+  console.log(`   Connected peers: ${knownPeers.size}`);
+  console.log(`   Transactions: ${transactions.length}`);
+}, 60000); // Every 60 seconds
 
 process.on('SIGINT', () => {
   console.log('Bootstrap nodes shutting down...');

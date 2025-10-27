@@ -1,8 +1,9 @@
 import { Peer } from 'peerjs';
 import { openDB } from 'idb';
-import { logs, messages, connected_with_network } from '../src/store.js';
+import { logs, messages, connected_with_network, contentStorage } from '../src/store.js';
 import nacl from 'tweetnacl';
 import { Buffer } from 'buffer';
+import CryptoJS from 'crypto-js';
 
 // Fallback for environments where Buffer is not global
 if (typeof window !== 'undefined' && !window.Buffer) {
@@ -32,15 +33,18 @@ function overrideConsole(method) {
 }
 ['log', 'info', 'warn', 'error'].forEach((method) => overrideConsole(method));
 
-// --- IndexedDB Functions (UPDATED FOR USERS TABLE) ---
+// --- IndexedDB Functions (UPDATED FOR USERS TABLE AND CONTENT STORAGE) ---
 async function openDatabase() {
-    return openDB('DecentralizedSocialDB', 2, { // Version must be incremented
+    return openDB('DecentralizedSocialDB', 4, {
       upgrade(db, oldVersion) {
         if (oldVersion < 1) {
           db.createObjectStore('transactions', { keyPath: 'signature' });
         }
         if (oldVersion < 2) {
           db.createObjectStore('users', { keyPath: 'username' });
+        }
+        if (oldVersion < 3) {
+          db.createObjectStore('content', { keyPath: 'hash' });
         }
       },
     });
@@ -53,7 +57,6 @@ async function getAllTransactions() {
     const db = await openDatabase();
     return await db.getAll('transactions');
 }
-// --- NEW: User Database Functions ---
 async function storeUser(user) {
     const db = await openDatabase();
     await db.put('users', user);
@@ -61,6 +64,25 @@ async function storeUser(user) {
 async function getUser(username) {
     const db = await openDatabase();
     return await db.get('users', username);
+}
+
+// Content storage functions
+async function storeContent(hash, data, type) {
+    const db = await openDatabase();
+    await db.put('content', { hash, data, type, timestamp: Date.now() });
+    
+    console.log(`✅ Stored content in local DB: ${hash.substring(0, 16)}... (type: ${type})`);
+    
+    // Also update the in-memory store
+    contentStorage.update(current => ({
+        ...current,
+        [hash]: { data, type }
+    }));
+}
+
+async function getContent(hash) {
+    const db = await openDatabase();
+    return await db.get('content', hash);
 }
 
 // --- Cryptography & Transaction Creation (UPDATED) ---
@@ -88,6 +110,58 @@ async function verifySignature(publicKey, signature, signedData) {
     }
 }
 
+// Generate hash from text (same format as public keys)
+export function generateTextHash(text) {
+    return CryptoJS.SHA256(text).toString(CryptoJS.enc.Hex);
+}
+
+// XOR distance calculation for DHT
+function xorDistance(hash1, hash2) {
+    const buf1 = Buffer.from(hash1, 'hex');
+    const buf2 = Buffer.from(hash2, 'hex');
+    let distance = 0n;
+    
+    for (let i = 0; i < buf1.length; i++) {
+        distance = (distance << 8n) | BigInt(buf1[i] ^ buf2[i]);
+    }
+    
+    return distance;
+}
+
+// Find the 3 closest nodes to a given hash
+// Find the 3 closest nodes to a given hash
+function findClosestNodes(targetHash, knownPeers, count = 3) {
+    // CHANGED: Remove the filter that excludes bootstrap nodes
+    const peerArray = Array.from(knownPeers); // Now includes bootstrap nodes!
+    
+    console.log(`🔍 Finding closest nodes to hash: ${targetHash.substring(0, 16)}...`);
+    console.log(`   Available peers (including bootstrap): ${peerArray.length}`);
+    
+    if (peerArray.length === 0) {
+        console.warn(`   ⚠️ No peers available!`);
+        return [];
+    }
+    
+    const distances = peerArray.map(peerId => ({
+        peerId,
+        distance: xorDistance(targetHash, peerId)
+    }))
+    .sort((a, b) => {
+        if (a.distance < b.distance) return -1;
+        if (a.distance > b.distance) return 1;
+        return 0;
+    });
+    
+    const closest = distances.slice(0, count);
+    console.log(`   📍 Top ${closest.length} closest nodes:`);
+    closest.forEach((node, idx) => {
+        const isBootstrap = BOOTSTRAP_NODES.includes(node.peerId);
+        console.log(`      ${idx + 1}. ${node.peerId.substring(0, 16)}... ${isBootstrap ? '[BOOTSTRAP]' : '[CLIENT]'} (distance: ${node.distance.toString(16).substring(0, 16)}...)`);
+    });
+    
+    return closest.map(d => d.peerId);
+}
+
 export class PeerToPeerConnection {
     constructor(peerId = null, privateKey = null) {
         this.peer = new Peer(peerId, {
@@ -106,7 +180,8 @@ export class PeerToPeerConnection {
         this.knownPeers = new Set();
         this.connectingPeers = new Set();
         this.peerId = peerId;
-        this.privateKey = privateKey ? hexToUint8Array(privateKey) : null; // Store private key for signing
+        this.privateKey = privateKey ? hexToUint8Array(privateKey) : null;
+        this.pendingContentRequests = new Map();
 
         this.peer.on('open', async (id) => {
             console.warn('Peer is ready with ID:', id);
@@ -136,7 +211,6 @@ export class PeerToPeerConnection {
         });
     }
 
-    // --- NEW: User Registration ---
     async registerUser(username, publicKey) {
         if (!this.privateKey) {
             console.error("Private key not available for registration.");
@@ -158,31 +232,188 @@ export class PeerToPeerConnection {
         return true;
     }
 
-    // --- UPDATED: postMessage now uses real signing ---
-    async postMessage(name, content, publicKey) {
+    // UPDATED: postMessage now creates hashes and stores content in DHT
+    async postMessage(name, content, publicKey, imageData = null, imageHash = null) {
         if (!this.privateKey) {
             console.error("Private key not available for posting.");
             return;
         }
-        const postData = { type: 'post', sender: name, content, time: new Date().toISOString(), publicKey };
+        
+        console.log(`\n📝 === POSTING NEW MESSAGE ===`);
+        console.log(`   Content: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
+        console.log(`   Has image: ${imageData ? 'Yes' : 'No'}`);
+        
+        // Step 1: Generate hash for text content
+        const contentHash = generateTextHash(content);
+        console.log(`   Generated content hash: ${contentHash}`);
+        
+        // Prepare hashes array
+        const hashes = { content: contentHash };
+        if (imageHash) {
+            hashes.image = imageHash;
+            console.log(`   Image hash: ${imageHash}`);
+        }
+        
+        // Create transaction with hashes instead of actual content
+        const postData = { 
+            type: 'post', 
+            sender: name, 
+            hashes: hashes,
+            time: new Date().toISOString(), 
+            publicKey 
+        };
         const signature = await createSignedMessage(this.privateKey, postData);
         const transaction = { ...postData, signature };
         
+        console.log(`   Transaction signature: ${signature.substring(0, 16)}...`);
+        
         await storeTransaction(transaction);
         messages.update(current => [transaction, ...current].sort((a,b)=> new Date(b.time).getTime() - new Date(a.time).getTime()));
+        
+        console.log(`   📡 Broadcasting transaction to network...`);
         this.broadcast(`transaction:${JSON.stringify(transaction)}`);
+        
+        // Step 2: Store actual content in DHT
+        console.log(`\n💾 === STORING CONTENT IN DHT ===`);
+        
+        // Store text content locally first
+        await storeContent(contentHash, content, 'text');
+        
+        // Find closest nodes for content hash
+        console.log(`   Current known peers: ${this.knownPeers.size}`);
+        const contentNodes = findClosestNodes(contentHash, this.knownPeers, 3);
+        
+        if (contentNodes.length === 0) {
+            console.error(`   ❌ No peers available to store content!`);
+        } else {
+            console.log(`   📤 Sending content to ${contentNodes.length} nodes...`);
+            
+            // Send content to closest nodes
+            contentNodes.forEach(nodeId => {
+                const payload = {
+                    hash: contentHash,
+                    data: content,
+                    type: 'text'
+                };
+                console.log(`      → Sending to ${nodeId.substring(0, 16)}...`);
+                this.send(nodeId, `message-content-set:${JSON.stringify(payload)}`);
+            });
+        }
+        
+        // If there's an image, store it too
+        if (imageData && imageHash) {
+            console.log(`\n🖼️ === STORING IMAGE IN DHT ===`);
+            await storeContent(imageHash, imageData, 'image');
+            
+            const imageNodes = findClosestNodes(imageHash, this.knownPeers, 3);
+            
+            if (imageNodes.length === 0) {
+                console.error(`   ❌ No peers available to store image!`);
+            } else {
+                console.log(`   📤 Sending image to ${imageNodes.length} nodes...`);
+                
+                imageNodes.forEach(nodeId => {
+                    const payload = {
+                        hash: imageHash,
+                        data: imageData,
+                        type: 'image'
+                    };
+                    console.log(`      → Sending to ${nodeId.substring(0, 16)}...`);
+                    this.send(nodeId, `message-content-set:${JSON.stringify(payload)}`);
+                });
+            }
+        }
+        
+        console.log(`✅ === POST COMPLETE ===\n`);
     }
 
+    // Retrieve content from DHT
+    async getContentFromDHT(hash, messageLostCount = 0) {
+        console.log(`\n🔎 === RETRIEVING CONTENT FROM DHT ===`);
+        console.log(`   Hash: ${hash.substring(0, 16)}...`);
+        console.log(`   Message lost count: ${messageLostCount}`);
+        
+        // First check local storage
+        const localContent = await getContent(hash);
+        if (localContent) {
+            console.log(`   ✅ Content found locally!`);
+            return localContent;
+        }
+        
+        console.log(`   ⚠️ Content not found locally, querying network...`);
+        
+        // Find closest nodes
+        const closestNodes = findClosestNodes(hash, this.knownPeers, 3);
+        if (closestNodes.length === 0) {
+            console.warn(`   ❌ No peers available to retrieve content for hash: ${hash}`);
+            return null;
+        }
+        
+        console.log(`   📥 Requesting from ${closestNodes.length} nodes sequentially...`);
+        
+        // Try each node in sequence
+        for (let i = 0; i < closestNodes.length; i++) {
+            const nodeId = closestNodes[i];
+            
+            try {
+                console.log(`      Attempt ${i + 1}/${closestNodes.length}: ${nodeId.substring(0, 16)}...`);
+                const content = await this.requestContentFromNode(nodeId, hash, messageLostCount + i);
+                if (content) {
+                    console.log(`      ✅ Success! Received content from ${nodeId.substring(0, 16)}...`);
+                    // Store it locally for future use
+                    await storeContent(hash, content.data, content.type);
+                    return content;
+                }
+            } catch (error) {
+                console.warn(`      ❌ Failed: ${error.message}`);
+            }
+        }
+        
+        console.error(`   ❌ Failed to retrieve content after trying ${closestNodes.length} nodes`);
+        return null;
+    }
+
+    // Request content from a specific node
+    requestContentFromNode(nodeId, hash, messageLostCount) {
+        return new Promise((resolve, reject) => {
+            const requestId = `${hash}-${Date.now()}`;
+            
+            // Set timeout
+            const timeout = setTimeout(() => {
+                this.pendingContentRequests.delete(requestId);
+                reject(new Error('Content request timeout'));
+            }, 10000);
+            
+            // Store callback
+            this.pendingContentRequests.set(requestId, {
+                resolve: (data) => {
+                    clearTimeout(timeout);
+                    this.pendingContentRequests.delete(requestId);
+                    resolve(data);
+                },
+                reject: (error) => {
+                    clearTimeout(timeout);
+                    this.pendingContentRequests.delete(requestId);
+                    reject(error);
+                }
+            });
+            
+            // Send request
+            this.send(nodeId, `message-content-get:${JSON.stringify({
+                hash,
+                requestId,
+                messageLostCount
+            })}`);
+        });
+    }
 
     connectToPeer(peerId) {
-        // Avoid connecting to self, existing connections, or peers we're already connecting to
         if (peerId === this.peer.id || 
             this.knownPeers.has(peerId) || 
             this.connectingPeers.has(peerId)) {
             return;
         }
         
-        // If WE are a bootstrap node, don't connect to other bootstrap nodes
         if (BOOTSTRAP_NODES.includes(this.peer.id) && BOOTSTRAP_NODES.includes(peerId)) {
             return;
         }
@@ -194,14 +425,13 @@ export class PeerToPeerConnection {
             reliable: true
         });
         
-        // Set connection timeout
         const timeout = setTimeout(() => {
             if (this.connectingPeers.has(peerId) && !this.knownPeers.has(peerId)) {
                 console.warn(`Connection timeout for ${peerId}`);
                 this.connectingPeers.delete(peerId);
                 conn.close();
             }
-        }, 15000); // 15 second timeout
+        }, 15000);
         
         conn.on('open', () => {
             clearTimeout(timeout);
@@ -215,12 +445,11 @@ export class PeerToPeerConnection {
             console.warn('Connection error with', peerId, ':', err.message || err.type);
             this.connectingPeers.delete(peerId);
             
-            // Retry connection to bootstrap nodes after delay
             if (BOOTSTRAP_NODES.includes(peerId)) {
                 setTimeout(() => {
                     console.log(`Retrying connection to bootstrap node: ${peerId}`);
                     this.connectToPeer(peerId);
-                }, 5000); // Retry after 5 seconds
+                }, 5000);
             }
         });
 
@@ -228,12 +457,11 @@ export class PeerToPeerConnection {
             clearTimeout(timeout);
             this.connectingPeers.delete(peerId);
             
-            // Retry connection to bootstrap nodes after delay
             if (BOOTSTRAP_NODES.includes(peerId)) {
                 setTimeout(() => {
                     console.log(`Reconnecting to bootstrap node: ${peerId}`);
                     this.connectToPeer(peerId);
-                }, 3000); // Retry after 3 seconds
+                }, 3000);
             }
         });
     }
@@ -250,15 +478,26 @@ export class PeerToPeerConnection {
             const payload = data.substring(separatorIndex + 1);
 
             if (type === 'node_info_request') {
-                // ... (logic unchanged)
+                const nonBootstrapPeers = Array.from(this.knownPeers).filter(
+                    peerId => !BOOTSTRAP_NODES.includes(peerId)
+                );
+                conn.send(`node_info_response:${JSON.stringify(nonBootstrapPeers)}`);
             } else if (type === 'node_info_response') {
-                // ... (logic unchanged)
+                try {
+                    const peers = JSON.parse(payload);
+                    peers.forEach(peerId => {
+                        if (!this.knownPeers.has(peerId) && peerId !== this.peer.id) {
+                            setTimeout(() => this.connectToPeer(peerId), Math.random() * 2000);
+                        }
+                    });
+                } catch (error) {
+                    console.error("Error parsing node_info_response:", error);
+                }
             } else if (type === 'transaction') {
                 try {
                     const transaction = JSON.parse(payload);
                     const { signature, ...signedData } = transaction;
 
-                    // --- Verification Step 1: Check Signature ---
                     const isSignatureValid = await verifySignature(transaction.publicKey, signature, signedData);
                     if (!isSignatureValid) {
                         console.error("INVALID SIGNATURE. Discarding transaction.", transaction);
@@ -266,7 +505,6 @@ export class PeerToPeerConnection {
                     }
                     console.log("Signature is valid for transaction:", transaction.type);
 
-                    // --- Verification Step 2: Handle based on type ---
                     if (transaction.type === 'user_registration') {
                         const user = await getUser(transaction.username);
                         if (!user) {
@@ -288,6 +526,60 @@ export class PeerToPeerConnection {
                 } catch(e) {
                     console.error("Error processing transaction payload:", e);
                 }
+            } else if (type === 'message-content-set') {
+                // Handle incoming content storage request
+                try {
+                    const { hash, data, type: contentType } = JSON.parse(payload);
+                    console.log(`📥 Received content storage request from ${conn.peer.substring(0, 16)}...`);
+                    console.log(`   Hash: ${hash.substring(0, 16)}... (type: ${contentType})`);
+                    await storeContent(hash, data, contentType);
+                } catch (error) {
+                    console.error("Error storing content:", error);
+                }
+            } else if (type === 'message-content-get') {
+                // Handle content retrieval request
+                try {
+                    const { hash, requestId, messageLostCount } = JSON.parse(payload);
+                    console.log(`📤 Content request from ${conn.peer.substring(0, 16)}... for hash: ${hash.substring(0, 16)}... (lost: ${messageLostCount})`);
+                    
+                    const content = await getContent(hash);
+                    if (content) {
+                        console.log(`   ✅ Found content, sending response`);
+                        this.send(conn.peer, `message-content-response:${JSON.stringify({
+                            requestId,
+                            hash,
+                            data: content.data,
+                            type: content.type,
+                            success: true
+                        })}`);
+                    } else {
+                        console.log(`   ❌ Content not found locally`);
+                        this.send(conn.peer, `message-content-response:${JSON.stringify({
+                            requestId,
+                            hash,
+                            success: false
+                        })}`);
+                    }
+                } catch (error) {
+                    console.error("Error handling content request:", error);
+                }
+            } else if (type === 'message-content-response') {
+                // Handle content retrieval response
+                try {
+                    const { requestId, hash, data, type: contentType, success } = JSON.parse(payload);
+                    
+                    const request = this.pendingContentRequests.get(requestId);
+                    if (request) {
+                        if (success) {
+                            console.log(`📦 Received content response for hash: ${hash.substring(0, 16)}...`);
+                            request.resolve({ data, type: contentType });
+                        } else {
+                            request.reject(new Error('Content not found on peer'));
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error handling content response:", error);
+                }
             } else if (type === 'peer_disconnected') {
                 const disconnectedPeerId = payload;
                 console.warn(`Peer ${disconnectedPeerId} has disconnected.`);
@@ -305,7 +597,7 @@ export class PeerToPeerConnection {
     }
 
     broadcast(message) {
-        console.log(`Broadcasting to ${this.knownPeers.size} peers: ${message}`);
+        console.log(`Broadcasting to ${this.knownPeers.size} peers`);
         this.knownPeers.forEach(peerId => {
             this.send(peerId, message);
         });

@@ -3,20 +3,17 @@
   import sha256 from "crypto-js/sha256";
   import encHex from "crypto-js/enc-hex";
   import { Buffer } from 'buffer';
-  import { openDB } from "idb"; // <-- NEW: Import openDB
-  // --- CHANGED: Removed 'users' from the import ---
-  import { credentials, messages, connected_with_network } from '../store.js'; 
-  import { PeerToPeerConnection } from '../networking.js';
+  import { openDB } from "idb";
+  import { credentials, messages, connected_with_network, contentStorage } from '../store.js';
+  import { PeerToPeerConnection, generateTextHash } from '../networking.js';
   import LogConsole from '../lib/Console.svelte';
   import { Link } from "svelte-routing";
   import Trending from "../lib/Trending.svelte";
   import CryptoJS from 'crypto-js';
 
-  // Import fonts
   import "@fontsource/geist/300.css";
   import "@fontsource/questrial";
   
-  // State variables (unchanged)
   let public_key = null;
   let private_key = null;
   let username = "";
@@ -35,15 +32,13 @@
 
   let imagePreviewUrl = null;
   let imagePreviewFilename = null;
+  let imagePreviewData = null;
+  let imagePreviewHash = null;
 
-
-  // --- NEW: Function to trigger the hidden file input ---
   function handleImageUpload() {
-    fileInput.click(); // Programmatically click the hidden file input
+    fileInput.click();
   }
 
-  // --- NEW: Function to process the selected image ---
-    // --- MODIFIED: Function to process the selected image ---
   async function processImage(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -53,30 +48,36 @@
 
     const reader = new FileReader();
     reader.onload = (e) => {
-      // 1. Convert the ArrayBuffer (e.target.result) to a WordArray
-      const wordArray = CryptoJS.lib.WordArray.create(e.target.result);
-
-      // 2. Hash the WordArray to get the correct hash from the file content
-      const hash = CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex);
-
-      // 3. Log the unique hash to the console
-      console.log(hash);
+      const result = e.target.result;
+      
+      if (result instanceof ArrayBuffer) {
+        // Convert ArrayBuffer to WordArray for hashing
+        const wordArray = CryptoJS.lib.WordArray.create(result);
+        const hash = CryptoJS.SHA256(wordArray).toString(CryptoJS.enc.Hex);
+        
+        imagePreviewHash = hash;
+        
+        // Convert ArrayBuffer to base64 for transmission
+        const uint8Array = new Uint8Array(result);
+        const binaryString = uint8Array.reduce((data, byte) => data + String.fromCharCode(byte), '');
+        imagePreviewData = btoa(binaryString);
+        
+        console.log(`Image hash: ${hash}`);
+      }
     };
     reader.readAsArrayBuffer(file);
   }
 
-  // Helper to extract hashtags from a string:
   function getHashtagsFromText(text) {
     if (typeof text !== 'string') return [];
-    // This will match hashtags of the format #word123 (no spaces, no punctuation in tag)
     return (text.match(/#\w+/g) || []);
   }
 
-  // Compute top hashtags by usage count across all messages:
   $: hashtagCounts = (() => {
     const counts = {};
     for (const msg of $messages) {
-      for (const hashtag of getHashtagsFromText(msg.content || "")) {
+      const content = getContentFromMessage(msg);
+      for (const hashtag of getHashtagsFromText(content || "")) {
         const tag = hashtag.toLowerCase();
         counts[tag] = (counts[tag] || 0) + 1;
       }
@@ -84,56 +85,117 @@
     return counts;
   })();
 
-  // Top 10 hashtags, sorted by usage (descending), no duplicates:
   $: topHashtags = Object.entries(hashtagCounts)
-    .sort((a, b) => b[1] - a[1]) // descending
-    .slice(0, 10)                 // take top 10
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
     .map(([tag]) => tag);
 
-
-  // --- NEW: Add IndexedDB helpers directly in the component ---
   async function openDatabase() {
-    return openDB('DecentralizedSocialDB', 2); // Version 2 has the 'users' table
+    return openDB('DecentralizedSocialDB', 4, {
+      upgrade(db, oldVersion) {
+        // Create all object stores if they don't exist
+        if (!db.objectStoreNames.contains('transactions')) {
+          db.createObjectStore('transactions', { keyPath: 'signature' });
+        }
+        if (!db.objectStoreNames.contains('users')) {
+          db.createObjectStore('users', { keyPath: 'username' });
+        }
+        if (!db.objectStoreNames.contains('content')) {
+          db.createObjectStore('content', { keyPath: 'hash' });
+        }
+      },
+    });
   }
+  
   async function getUserFromDB(username) {
     const db = await openDatabase();
     return await db.get('users', username);
   }
 
-    // --- NEW: Function to clear the image preview ---
   function removeImagePreview() {
     imagePreviewUrl = null;
     imagePreviewFilename = null;
-    // Also clear the file input so the same file can be re-selected
+    imagePreviewData = null;
+    imagePreviewHash = null;
     if (fileInput) {
       fileInput.value = "";
     }
   }
 
+  // Get content from message (either from cache or retrieve from DHT)
+  function getContentFromMessage(msg) {
+    if (!msg || !msg.hashes) return msg.content || '';
+    
+    const contentHash = msg.hashes.content;
+    if ($contentStorage[contentHash]) {
+      return $contentStorage[contentHash].data;
+    }
+    
+    // Trigger async retrieval
+    if (network) {
+      network.getContentFromDHT(contentHash).then(content => {
+        if (content) {
+          contentStorage.update(current => ({
+            ...current,
+            [contentHash]: { data: content.data, type: content.type }
+          }));
+        }
+      }).catch(err => {
+        console.error('Failed to retrieve content:', err);
+      });
+    }
+    
+    return 'Loading...';
+  }
 
-  // $: filteredMessages (unchanged)
+  // Get image from message
+  function getImageFromMessage(msg) {
+    if (!msg || !msg.hashes || !msg.hashes.image) return null;
+    
+    const imageHash = msg.hashes.image;
+    if ($contentStorage[imageHash]) {
+      return $contentStorage[imageHash].data;
+    }
+    
+    // Trigger async retrieval
+    if (network) {
+      network.getContentFromDHT(imageHash).then(content => {
+        if (content) {
+          contentStorage.update(current => ({
+            ...current,
+            [imageHash]: { data: content.data, type: content.type }
+          }));
+        }
+      }).catch(err => {
+        console.error('Failed to retrieve image:', err);
+      });
+    }
+    
+    return null;
+  }
+
   $: filteredMessages = $messages.filter(msg => {
-    if (!msg || typeof msg !== 'object' || !msg.content) return false;
-    const messageContent = (msg.content || '').toLowerCase();
+    if (!msg || typeof msg !== 'object') return false;
+    const messageContent = getContentFromMessage(msg).toLowerCase();
     const senderName = (msg.sender || '').toLowerCase();
     const query = searchQuery.toLowerCase();
     return senderName.includes(query) || messageContent.includes(query);
   });
 
-  // setTab (unchanged)
   function setTab(tab) {
     activeTab = tab;
     if (tab === 'home') searchQuery = '';
   }
 
-  // handleLoginAndRegistration (logic updated)
   async function handleLoginAndRegistration(u, p) {
     isLoading = true;
     loginError = "";
     username = u;
     password = p;
 
-    // 1. Generate keys (unchanged)
+    // Ensure database is upgraded before proceeding
+    await openDatabase();
+
     const seed_str = `${username}:${password}`;
     const hash_hex = sha256(seed_str).toString(encHex);
     const seed = new Uint8Array(hash_hex.match(/.{2}/g).map(byte => parseInt(byte, 16)));
@@ -144,10 +206,8 @@
     
     credentials.set({ username, public_key, private_key });
 
-    // 2. Instantiate network (unchanged)
     network = new PeerToPeerConnection(public_key, private_key);
 
-    // This listener confirms when the network is ready (unchanged)
     const unsubscribe = connected_with_network.subscribe(connected => {
         if (connected) {
             isConnected = true;
@@ -157,12 +217,10 @@
         }
     });
 
-    // --- CHANGED: Check against IndexedDB, not a store ---
     setTimeout(async () => {
         const existingUser = await getUserFromDB(username);
 
         if (existingUser) {
-            // LOGIN PATH
             if (existingUser.publicKey !== public_key) {
                 loginError = "Wrong password for this username.";
                 isLoading = false;
@@ -171,7 +229,6 @@
             }
             console.log(`Login successful for ${username}.`);
         } else {
-            // REGISTRATION PATH
             console.log(`User ${username} not found locally. Attempting to register...`);
             const registered = await network.registerUser(username, public_key);
             if (!registered) {
@@ -185,20 +242,28 @@
     }, 4000);
   }
 
-  // sendMessage (unchanged)
+  // sendMessage now passes image data and hash to postMessage
   async function sendMessage() {
       if (!chatMessage.trim() || !network) return;
-      await network.postMessage(username, chatMessage.trim(), public_key);
+      
+      await network.postMessage(
+        username, 
+        chatMessage.trim(), 
+        public_key,
+        imagePreviewData,
+        imagePreviewHash
+      );
+      
       chatMessage = "";
+      removeImagePreview();
   }
 
-  // --- Helper functions for message display (unchanged) ---
   function getSenderFromMessage(msg) {
     return msg.sender || 'Anonymous';
   }
 
   function getBodyFromMessage(msg) {
-    return msg.content || '';
+    return getContentFromMessage(msg);
   }
 
   function getFormattedTimeFromMessage(msg) {
@@ -214,7 +279,7 @@
 
   function handleHashtagSearch(tag) {
     searchQuery = tag;
-    activeTab = 'search'; // Optional: switch to search tab if you want
+    activeTab = 'search';
   }
 </script>
 
@@ -229,7 +294,6 @@
     </div>
   {/if}
 
-  <!-- NEW: Add the Trending component here -->
   <div class="trending-container">
     <Trending trends={topHashtags} onHashtagClick={handleHashtagSearch} />
   </div>
@@ -242,7 +306,6 @@
           <input type="text" placeholder="Benutzername" bind:value={username} required disabled={isLoading} />
           <input type="password" placeholder="Passwort" bind:value={password} required disabled={isLoading} />
 
-          <!-- 2. NEW: Display login error messages -->
           {#if loginError}
             <p class="error-message">{loginError}</p>
           {/if}
@@ -260,7 +323,6 @@
   {/if}
 
   <div class="app-container">
-    <!-- START: New Layout Wrapper -->
     <div class="feed-column">
       <div class="feed-toolbar">
         <button class="home-btn" class:active={activeTab === 'home'} on:click={() => setTab('home')}>
@@ -297,6 +359,14 @@
               <div class="post-body">
                 {@html parseHashtags(getBodyFromMessage(msg))}
               </div>
+              {#if msg.hashes && msg.hashes.image}
+                {@const imageData = getImageFromMessage(msg)}
+                {#if imageData}
+                  <div class="post-image-container">
+                    <img src="data:image/png;base64,{imageData}" alt="Post image" class="post-image" />
+                  </div>
+                {/if}
+              {/if}
             </div>
           {/each}
           {/if}
@@ -318,7 +388,6 @@
             disabled={!isConnected} 
           />
 
-          <!-- NEW: Image Upload Icon -->
           <img 
             src="/image-icon.svg" 
             alt="Upload Image" 
@@ -326,7 +395,6 @@
             on:click={handleImageUpload}
           />
           
-          <!-- NEW: Hidden File Input -->
           <input 
             type="file" 
             accept="image/*" 
@@ -341,7 +409,6 @@
         </form>
       </div>
     </div>
-    <!-- END: New Layout Wrapper -->
 
     <div class="console-container">
       <LogConsole />
@@ -794,6 +861,33 @@
 
   .remove-preview-btn:hover {
     color: #ffffff;
+  }
+
+  /* --- NEW: Style for images inside a post --- */
+  .post-image {
+    width: 100%;
+    max-height: 400px;
+    object-fit: cover;
+    border-radius: 12px;
+    margin-top: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .post-image-container {
+    margin-bottom: -5px;
+  }
+
+  .post-image-placeholder {
+    width: 100%;
+    height: 100px;
+    border-radius: 12px;
+    margin-top: 12px;
+    background-color: #222;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+    font-size: 0.9em;
   }
 
 </style>
